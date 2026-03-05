@@ -27,7 +27,7 @@ def evaluate_job_with_ai(job_data_dict):
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
     
     # 高速で賢い「Gemini 1.5 Flash」モデルを使用
-    model = genai.GenerativeModel('gemini-1.5-flash')
+    model = genai.GenerativeModel('gemini-2.5-flash')
     
     prompt = f"""
     あなたは厳格な求人原稿の審査プロフェッショナルです。
@@ -121,3 +121,4 @@ if mode == "求人検索&AI判定":
 
             except Exception as e:
                 st.error(f"エラーが発生しました: {e}")
+
