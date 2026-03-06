@@ -69,7 +69,7 @@ def custom_spinner(text="処理中..."):
         # st.video("loading.mp4", autoplay=True, loop=True, muted=True)
         
         # （参考）もし動画ではなくGIF画像（loading.gif）を使いたい場合はこちら↓
-        # st.image("loading.gif", use_container_width=True)
+         st.image("6FCDDAA6-C15B-45A9-89D6-B6B27AE3E5BC", use_container_width=True)
         
     try:
         yield # ここで裏側の重い処理（AI審査など）が走ります
@@ -324,6 +324,7 @@ if st.session_state.pending_regs:
                         st.rerun()
                     except Exception as e:
                         st.error(f"登録エラー: {e}")
+
 
 
 
