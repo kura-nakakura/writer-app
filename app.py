@@ -6,64 +6,67 @@ import google.generativeai as genai
 import json
 import re
 
-# --- ページ設定（ここで横幅を広くし、アイコンを設定） ---
-st.set_page_config(page_title="求人原稿 自動審査ツール", page_icon="🌿", layout="wide")
+# --- ページ設定（アイコンを雲☁️にして、より淡色系に！） ---
+st.set_page_config(page_title="求人原稿 自動審査ツール", page_icon="☁️", layout="wide")
 
-# --- 🌳 カスタムCSS（自然系デザインの魔法） ---
+# --- 🤍 カスタムCSS（韓国風ミニマルデザインの魔法） ---
 st.markdown("""
 <style>
-    /* 1. アプリ全体の背景を深緑に設定 */
+    /* 1. 全体の背景を、洗練されたライトブルーグレーに */
     .stApp {
-        background-color: #274029 !important; /* 深緑 */
+        background-color: #F5F7FA !important; 
     }
 
-    /* 2. 基本的な文字をすべて白色に統一 */
+    /* 2. 文字色は真っ黒ではなく「ダークグレー」にして抜け感を出す */
     h1, h2, h3, h4, h5, h6, p, span, label, div {
-        color: #F8F9FA !important; /* 真っ白より少し優しいオフホワイト */
+        color: #4A4A4A !important; 
     }
 
-    /* 3. 区切り線（hr）を焦げ茶色に */
+    /* 3. 区切り線（hr）を淡いグレーに */
     hr {
-        border-bottom: 2px solid #5C3A21 !important; /* 焦げ茶色 */
+        border-bottom: 2px solid #E2E8F0 !important; 
         border-top: none !important;
         margin-top: 20px;
         margin-bottom: 20px;
     }
 
-    /* 4. 入力欄（テキストエリアやインプット）のデザイン */
+    /* 4. 入力欄は真っ白＆角を少し丸くして柔らかい印象に */
     .stTextInput input, .stTextArea textarea {
-        background-color: #1E2E1F !important; /* 背景よりさらに深い緑 */
-        color: #FFFFFF !important;
-        border: 2px solid #5C3A21 !important; /* 焦げ茶色の枠線 */
-        border-radius: 8px !important;
+        background-color: #FFFFFF !important; 
+        color: #4A4A4A !important;
+        border: 1px solid #D0D7E1 !important; 
+        border-radius: 12px !important; /* 角丸 */
+        box-shadow: inset 0 1px 3px rgba(0,0,0,0.02) !important;
     }
     .stTextInput input::placeholder, .stTextArea textarea::placeholder {
-        color: #8fa38f !important; /* プレースホルダー（例：）の文字色を薄い緑に */
+        color: #A0AABF !important; /* プレースホルダーも淡く */
     }
 
-    /* 5. セレクトボックス（担当者選択など） */
+    /* 5. セレクトボックス（担当者選択など）も角丸の白に */
     .stSelectbox div[data-baseweb="select"] > div {
-        background-color: #1E2E1F !important;
-        border: 2px solid #5C3A21 !important;
-        border-radius: 8px !important;
+        background-color: #FFFFFF !important;
+        border: 1px solid #D0D7E1 !important;
+        border-radius: 12px !important;
     }
 
-    /* 6. ボタンのデザイン（木をイメージした焦げ茶ベース） */
+    /* 6. ボタンのデザイン（おしゃれな「くすみブルー」） */
     .stButton > button {
-        background-color: #5C3A21 !important; /* 焦げ茶色 */
+        background-color: #7A9EBA !important; /* スレートブルー */
         color: #FFFFFF !important;
-        border: 1px solid #8B5A2B !important;
-        border-radius: 8px !important;
+        border: none !important;
+        border-radius: 12px !important; /* 角丸 */
         font-weight: bold !important;
+        box-shadow: 0 4px 10px rgba(122, 158, 186, 0.3) !important; /* ボタンの周りにふんわり青い影 */
+        transition: all 0.3s ease; /* マウスを乗せた時にフワッと動く魔法 */
     }
     .stButton > button:hover {
-        background-color: #3E2615 !important; /* マウスを乗せると少し暗くなる */
-        border-color: #FFFFFF !important;
+        background-color: #6385A1 !important; /* マウスを乗せると少し濃くなる */
+        transform: translateY(-2px) !important; /* 少し浮き上がる */
     }
 
-    /* 7. タブのデザイン（下線を焦げ茶色に） */
+    /* 7. タブのデザイン（下線をくすみブルーに） */
     .stTabs [data-baseweb="tab-list"] {
-        border-bottom: 3px solid #5C3A21 !important;
+        border-bottom: 2px solid #E2E8F0 !important;
         background-color: transparent !important;
     }
     .stTabs [data-baseweb="tab"] {
@@ -72,27 +75,23 @@ st.markdown("""
     .stTabs [data-baseweb="tab-list"] button [data-testid="stMarkdownContainer"] p {
         font-size: 18px !important;
         font-weight: bold !important;
+        color: #7A9EBA !important; /* タブの文字もくすみブルー */
     }
 
-    /* 8. 数字パネル（Metric）のデザイン */
-    [data-testid="stMetric"] {
-        background-color: #1E2E1F !important;
-        border: 2px solid #5C3A21 !important;
+    /* 8. 数字パネル（Metric）やアラートを「白いふんわりカード」にする */
+    [data-testid="stMetric"], [data-testid="stAlert"] {
+        background-color: #FFFFFF !important;
+        border: 1px solid #E2E8F0 !important;
         padding: 15px !important;
-        border-radius: 10px !important;
-        box-shadow: 2px 2px 5px rgba(0,0,0,0.3) !important;
-    }
-
-    /* 9. アラート（情報パネルなど）の背景を馴染ませる */
-    [data-testid="stAlert"] {
-        background-color: rgba(92, 58, 33, 0.4) !important; /* 焦げ茶色の半透明 */
-        border: 1px solid #5C3A21 !important;
+        border-radius: 12px !important;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.03) !important; /* ほんのり影をつける */
     }
     
-    /* 10. データフレーム（表）の背景調整 */
+    /* 9. データフレーム（表）の背景も白に */
     [data-testid="stDataFrame"] {
-        background-color: #1E2E1F !important;
-        border: 1px solid #5C3A21 !important;
+        background-color: #FFFFFF !important;
+        border: 1px solid #E2E8F0 !important;
+        border-radius: 8px !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -164,8 +163,8 @@ def evaluate_job_with_ai(job_data_dict):
     return response.text
 
 # --- メイン設定 ---
-# 画面上部のタイトルを少しスタイリッシュに（アイコンも葉っぱに変更🌿）
-st.markdown("<h1>🌿 原稿審査＆添削アシスタント</h1>", unsafe_allow_html=True)
+# 画面上部のタイトルを少しスタイリッシュに
+st.markdown("<h1>☁️ 原稿審査＆添削アシスタント</h1>", unsafe_allow_html=True)
 st.markdown("---")
 
 LIST_POSSIBLE_ID = '1dGJl6SfeuveynLJ8Q65JDZVymQLMGcyd5ZW5vBD02_8' 
@@ -363,6 +362,7 @@ if st.session_state.pending_regs:
                         st.rerun()
                     except Exception as e:
                         st.error(f"登録エラー: {e}")
+
 
 
 
