@@ -8,6 +8,10 @@ import json
 # --- ページ設定 ---
 st.set_page_config(page_title="判定＆添削ツール", layout="wide")
 
+# ★新機能：スプシ登録待ちリスト（カート機能）の準備
+if "pending_regs" not in st.session_state:
+    st.session_state.pending_regs = {}
+
 # --- Googleスプシ接続関数 ---
 @st.cache_resource
 def get_worksheet(sheet_id, sheet_name=None):
@@ -23,9 +27,7 @@ def get_worksheet(sheet_id, sheet_name=None):
 
 # --- 🤖 Google AI (Gemini) 自動審査関数 ---
 def evaluate_job_with_ai(job_data_dict):
-    # SecretsからGoogleのAIキーを読み込んで設定
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-    
     model = genai.GenerativeModel('gemini-2.5-flash')
     
     prompt = f"""
@@ -47,7 +49,6 @@ def evaluate_job_with_ai(job_data_dict):
     すべての規定をクリアしている場合は「✅ 掲載可」と出力してください。
     """
     
-    # AIにリクエストを送信（ルールを厳守させるため temperature=0.0 に設定）
     response = model.generate_content(
         prompt,
         generation_config=genai.types.GenerationConfig(temperature=0.0)
@@ -55,14 +56,16 @@ def evaluate_job_with_ai(job_data_dict):
     return response.text
 
 # --- メイン設定 ---
-# --- メイン設定 ---
 st.title("🚀 業務効率化アプリ")
 
 LIST_POSSIBLE_ID = '1dGJl6SfeuveynLJ8Q65JDZVymQLMGcyd5ZW5vBD02_8' 
 LIST_PAST_ID = '1aftTvSvKS2yWxHNRNW6rDkrXTsXBw-mWqXViEfsLOMw' 
 
-# ★モードを3種類に増やしました！
 mode = st.sidebar.selectbox("モード選択", ["1件検索&AI判定", "複数一括判定(最大10件)", "文章比較FB"])
+
+# ★新機能：担当者の選択
+if mode in ["1件検索&AI判定", "複数一括判定(最大10件)"]:
+    pic_name = st.sidebar.selectbox("👤 担当者名を選択", ["小山", "松下", "木村", "福島", "仲本"])
 
 # ==========================================
 # モード1：従来の1件ずつ丁寧に見るモード
@@ -122,6 +125,13 @@ if mode == "1件検索&AI判定":
                                 st.error(ai_result)
                             else:
                                 st.success(ai_result)
+                                
+                                # ★自動登録ではなく、登録待ちリスト（カート）にデータを追加！
+                                company_name = res1.iloc[0].get('企業名', '')
+                                job_name = res1.iloc[0].get('求人名', '')
+                                # A列(0), B列(1), C列(2), D・E・F列(空白), G列(6: 担当者)
+                                st.session_state.pending_regs[search_id] = [search_id, company_name, job_name, "", "", "", pic_name]
+                                st.info("💡 下部の「登録待ちリスト」にストックしました！確認後、手動で登録してください。")
                             
                             st.write("▼ 審査に使用したデータ")
                             st.dataframe(res1)
@@ -130,7 +140,7 @@ if mode == "1件検索&AI判定":
                 st.error(f"エラーが発生しました: {e}")
 
 # ==========================================
-# モード2：新搭載の複数一括モード
+# モード2：複数一括モード
 # ==========================================
 elif mode == "複数一括判定(最大10件)":
     st.subheader("🔍 求人ID 複数一括判定 ＆ AI自動審査 (最大10件)")
@@ -153,7 +163,6 @@ elif mode == "複数一括判定(最大10件)":
             st.info(f"💡 合計 {len(search_ids)} 件の判定を開始します...")
 
             try:
-                # 3万件あっても、ここで「1回だけ」一気に読み込みます！
                 with st.spinner('スプレッドシートの全体データを読み込み中...（通信は1回だけ！）'):
                     ws1 = get_worksheet(LIST_POSSIBLE_ID)
                     all_data1 = ws1.get_all_values()
@@ -176,7 +185,6 @@ elif mode == "複数一括判定(最大10件)":
                             st.error("❌ マスタ2の1行目に「求人ID」という項目が見つかりません。")
                             st.stop()
 
-                # 読み込んだデータの中から、10件分を一瞬で探し出します
                 for i, search_id in enumerate(search_ids):
                     st.markdown("---") 
                     st.markdown(f"### 🎯 {i+1}件目: 求人ID `{search_id}`")
@@ -204,12 +212,45 @@ elif mode == "複数一括判定(最大10件)":
                                     st.error(ai_result)
                                 else:
                                     st.success(ai_result)
+                                    
+                                    company_name = res1.iloc[0].get('企業名', '')
+                                    job_name = res1.iloc[0].get('求人名', '')
+                                    st.session_state.pending_regs[search_id] = [search_id, company_name, job_name, "", "", "", pic_name]
+                                    st.info("💡 下部の「登録待ちリスト」にストックしました！確認後、手動で登録してください。")
                                 
                                 with st.expander("▼ 審査に使用したデータ（クリックで開く）"):
                                     st.dataframe(res1)
 
             except Exception as e:
                 st.error(f"エラーが発生しました: {e}")
+
+# ==========================================
+# ★新機能：登録待ちリスト表示と手動登録ボタン
+# ==========================================
+if mode in ["1件検索&AI判定", "複数一括判定(最大10件)"]:
+    if st.session_state.pending_regs:
+        st.markdown("---")
+        st.markdown("## 🛒 スプシ登録待ちリスト")
+        st.caption("審査をクリアした求人がここにストックされています。確認後、手動で登録ボタンを押してください！")
+        
+        for sid, row_data in list(st.session_state.pending_regs.items()):
+            # 枠線をつけて見やすくする
+            with st.container():
+                col1, col2 = st.columns([4, 1])
+                with col1:
+                    st.markdown(f"🏢 **{row_data[1]}** (ID: `{sid}`) ／ 👤 担当: {row_data[6]}")
+                with col2:
+                    # ここのボタンを押すとスプシに書き込まれます！
+                    if st.button("📝 スプシに登録", key=f"reg_{sid}"):
+                        try:
+                            with st.spinner("登録中..."):
+                                ws2 = get_worksheet(LIST_PAST_ID, "転載確認シート")
+                                ws2.append_row(row_data)
+                            st.success(f"「{row_data[1]}」を登録しました！")
+                            del st.session_state.pending_regs[sid] # 登録が終わったらリストから消す
+                            st.rerun() # 画面をリフレッシュ
+                        except Exception as e:
+                            st.error(f"エラーが発生しました: {e}")
 
 # ==========================================
 # モード3：文章比較FB（ミスチェック）
@@ -224,17 +265,13 @@ elif mode == "文章比較FB":
     with col2:
         text_b = st.text_area("【B】比較文章（チェック対象）", height=200, placeholder="ここに作成した文章を貼り付けます")
 
-    # --- 🌟 ここがスプシ連携のスーパーパワー！ ---
     try:
         with st.spinner('スプレッドシートから最新のNGワードを読み込み中...'):
             ws_ng = get_worksheet(LIST_PAST_ID, "転載情報")
             ng_raw_text = ws_ng.acell('B2').value
             
             if ng_raw_text:
-                # 1. 「NGワード：」という最初の文字を消す
                 ng_text = ng_raw_text.replace("NGワード：", "").replace("NGワード:", "")
-                
-                # 2. 「・」をカンマとスペース「, 」に変換（🔶はそのまま残ります！）
                 default_ng_words = ng_text.replace("・", ", ").strip()
             else:
                 default_ng_words = ""
@@ -243,16 +280,13 @@ elif mode == "文章比較FB":
         default_ng_words = "絶対, 必ず, 日本一, 最高"
         st.warning(f"⚠️ NGワードが読み込めなかったため、仮のNGワードを使用します。エラー: {e}")
 
-    # スプシから読み込んだ最新のNGワードが、最初からここに入った状態になります！
     ng_words_input = st.text_input("🚫 今日のNGワード（スプシから自動読込 / ここで一時的な変更も可能）", value=default_ng_words)
-    # ---------------------------------------------
 
     if st.button("ミスチェック実行"):
         if not text_a or not text_b:
             st.warning("AとBの両方に文章を入力してください！")
             st.stop()
 
-        # 1. 文字数カウント
         st.markdown("### 📊 文字数カウント")
         st.info(f"【A】元文章: **{len(text_a)}文字** ／ 【B】比較文章: **{len(text_b)}文字**")
         diff = len(text_b) - len(text_a)
@@ -263,10 +297,8 @@ elif mode == "文章比較FB":
         else:
             st.write("👉 文字数はピッタリ同じです！")
 
-        # 2. GeminiによるAIチェック
         with st.spinner('🤖 AIが違いとNGワードをくまなく探しています...'):
             try:
-                import google.generativeai as genai
                 genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
                 model = genai.GenerativeModel('gemini-2.5-flash')
                 
