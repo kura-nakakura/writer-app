@@ -47,7 +47,7 @@ def set_bg_video(video_file):
         st.warning(f"背景動画の読み込みに失敗しました: {e}")
 
 # ここでファイル名を指定して実行！（ファイル名はご自身のものに変更してください）
-set_bg_video("背景にしたい動画.mp4")
+set_bg_video("6FCDDAA6-C15B-45A9-89D6-B6B27AE3E5BC.gif")
 
 # --- 🤍 カスタムCSS（韓国風ミニマルデザインの魔法） ---
 st.markdown("""
@@ -363,6 +363,7 @@ if st.session_state.pending_regs:
                         st.rerun()
                     except Exception as e:
                         st.error(f"登録エラー: {e}")
+
 
 
 
