@@ -72,8 +72,14 @@ if mode == "求人検索&AI判定":
                 # STEP 1: 掲載可能リスト
                 with st.spinner('掲載可能リストを確認中...'):
                     ws1 = get_worksheet(LIST_POSSIBLE_ID)
-                    df1 = pd.DataFrame(ws1.get_all_values()[1:], columns=ws1.get_all_values()[0])
+                    all_data1 = ws1.get_all_values()
+                    df1 = pd.DataFrame(all_data1[1:], columns=all_data1[0])
+                    # 列名の前後の空白を消す
                     df1.columns = [str(col).strip() for col in df1.columns]
+                    # ★エラー対策：重複している列名や、名前が空っぽの列を無視する！
+                    df1 = df1.loc[:, ~df1.columns.duplicated()]
+                    df1 = df1.loc[:, df1.columns != '']
+                    
                     res1 = df1[df1['求人ID'] == search_id]
 
                 if res1.empty:
@@ -91,6 +97,9 @@ if mode == "求人検索&AI判定":
                         else:
                             df2 = pd.DataFrame(all_data2[1:], columns=all_data2[0])
                             df2.columns = [str(col).strip() for col in df2.columns]
+                            # ★エラー対策：重複している列名や、名前が空っぽの列を無視する！
+                            df2 = df2.loc[:, ~df2.columns.duplicated()]
+                            df2 = df2.loc[:, df2.columns != '']
                             
                             if '求人ID' not in df2.columns:
                                 st.error("❌ マスタ2（転載確認シート）の1行目に「求人ID」という項目が見つかりません。")
@@ -100,7 +109,8 @@ if mode == "求人検索&AI判定":
 
                     if not res2.empty:
                         st.error("❌ 判定結果：掲載不可（過去掲載リストと重複しています）")
-                        st.dataframe(res2)
+                        # ★大正解の変更：マスタ2(res2)ではなく、マスタ1(res1)の詳しいデータを表示する！
+                        st.dataframe(res1)
                     else:
                         st.success("✅ スプシ判定クリア！続けてAI審査を行います...")
                         
@@ -120,5 +130,6 @@ if mode == "求人検索&AI判定":
 
             except Exception as e:
                 st.error(f"エラーが発生しました: {e}")
+
 
 
