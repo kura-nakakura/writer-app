@@ -10,45 +10,6 @@ import contextlib # ★新機能：カスタムローディング用
 # --- ページ設定 ---
 st.set_page_config(page_title="求人原稿 自動審査ツール", page_icon="☁️", layout="wide")
 
-import base64
-
-# --- 🎬 背景に動画を流す魔法のコード ---
-def set_bg_video(video_file):
-    try:
-        with open(video_file, "rb") as f:
-            video_bytes = f.read()
-        encoded_video = base64.b64encode(video_bytes).decode()
-        
-        st.markdown(
-            f"""
-            <style>
-            #bg-video {{
-                position: fixed;
-                right: 0;
-                bottom: 0;
-                min-width: 100%;
-                min-height: 100%;
-                z-index: -1; /* 一番奥に配置する */
-                opacity: 0.3; /* ★ここ重要：動画を薄くして文字を読みやすくする */
-                object-fit: cover;
-            }}
-            /* 背景のベース色を透明にして動画を透けさせる */
-            .stApp {{
-                background-color: transparent !important;
-            }}
-            </style>
-            <video id="bg-video" autoplay loop muted playsinline>
-                <source src="data:video/mp4;base64,{encoded_video}" type="video/mp4">
-            </video>
-            """,
-            unsafe_allow_html=True
-        )
-    except Exception as e:
-        st.warning(f"背景動画の読み込みに失敗しました: {e}")
-
-# ここでファイル名を指定して実行！（ファイル名はご自身のものに変更してください）
-set_bg_video("6FCDDAA6-C15B-45A9-89D6-B6B27AE3E5BC.gif")
-
 # --- 🤍 カスタムCSS（韓国風ミニマルデザインの魔法） ---
 st.markdown("""
 <style>
@@ -363,6 +324,7 @@ if st.session_state.pending_regs:
                         st.rerun()
                     except Exception as e:
                         st.error(f"登録エラー: {e}")
+
 
 
 
