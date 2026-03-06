@@ -4,11 +4,35 @@ from oauth2client.service_account import ServiceAccountCredentials
 import pandas as pd
 import google.generativeai as genai
 import json
+import re
 
-# --- ページ設定 ---
-st.set_page_config(page_title="判定＆添削ツール", layout="wide")
+# --- ページ設定（ここで横幅を広くし、アイコンを設定） ---
+st.set_page_config(page_title="求人原稿 自動審査ツール", page_icon="✨", layout="wide")
 
-# スプシ登録待ちリスト（カート機能）の準備
+# --- 🎨 カスタムCSS（オシャレにする魔法） ---
+st.markdown("""
+<style>
+    /* 全体の背景をほんのり優しいグレーにして、メイン画面を際立たせる */
+    .stApp {
+        background-color: #F8F9FA;
+    }
+    /* タブの文字を大きく、太くする */
+    .stTabs [data-baseweb="tab-list"] button [data-testid="stMarkdownContainer"] p {
+        font-size: 18px;
+        font-weight: bold;
+    }
+    /* 枠線付きコンテナ（カード風デザイン） */
+    .custom-card {
+        background-color: #FFFFFF;
+        padding: 20px;
+        border-radius: 10px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        margin-bottom: 20px;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# --- 状態管理（カート機能） ---
 if "pending_regs" not in st.session_state:
     st.session_state.pending_regs = {}
 
@@ -25,7 +49,7 @@ def get_worksheet(sheet_id, sheet_name=None):
     else:
         return sh.get_worksheet(0)
 
-# --- 🌟 爆速化の要：スプシデータを暗記する関数（マスタ1用） ---
+# --- スプシ読み込み関数 ---
 @st.cache_data(ttl=3600)
 def load_cached_dataframe(sheet_id, sheet_name=None):
     ws = get_worksheet(sheet_id, sheet_name)
@@ -38,7 +62,6 @@ def load_cached_dataframe(sheet_id, sheet_name=None):
     df = df.loc[:, df.columns != '']
     return df
 
-# --- 🌟 常に最新のデータを読み込む関数（マスタ2用・暗記しない） ---
 def load_realtime_dataframe(sheet_id, sheet_name=None):
     ws = get_worksheet(sheet_id, sheet_name)
     all_data = ws.get_all_values()
@@ -50,12 +73,10 @@ def load_realtime_dataframe(sheet_id, sheet_name=None):
     df = df.loc[:, df.columns != '']
     return df
 
-# --- 🤖 Google AI (Gemini) 自動審査関数 ---
+# --- 🤖 AI審査関数 ---
 def evaluate_job_with_ai(job_data_dict):
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-    # 500エラーが頻発する場合は 'gemini-1.5-flash' に変更してください
     model = genai.GenerativeModel('gemini-2.5-flash')
-    
     prompt = f"""
     あなたは厳格な求人原稿の審査プロフェッショナルです。
     以下の【求人データ】が、【審査規定】を満たしているかチェックしてください。
@@ -64,8 +85,8 @@ def evaluate_job_with_ai(job_data_dict):
     {json.dumps(job_data_dict, ensure_ascii=False, indent=2)}
 
     【審査規定】
-    1. 基本給・月給: 最低賃金割れの懸念がないか。金額や内訳(基本給と手当の割合)が不明瞭でないか。
-    2. 固定残業代: 「金額」と「時間」の両方が明記されているか。原則45時間を超える記載(36協定の懸念)や範囲が不明確な記載がないか。
+    1. 基本給・月給: 最低賃金割れの懸念がないか。金額や内訳が不明瞭でないか。
+    2. 固定残業代: 「金額」と「時間」の両方が明記されているか。原則45時間を超える記載や範囲が不明確な記載がないか。
     3. 各種手当: 手当の名称や詳細が不明なまま金額だけ記載されていないか。
     4. 労働時間・休日: 年間休日日数の記載が抜けていないか(必須)。1日の労働時間が法定(8時間)を超えていないか。
     5. その他: 勤務地やタイトルなどに矛盾がないか。
@@ -74,292 +95,213 @@ def evaluate_job_with_ai(job_data_dict):
     規定違反が1つでもある場合は「❌ 掲載不可」とし、どの規定にどう違反しているか具体的な理由を提示してください。
     すべての規定をクリアしている場合は「✅ 掲載可」と出力してください。
     """
-    
-    response = model.generate_content(
-        prompt,
-        generation_config=genai.types.GenerationConfig(temperature=0.0)
-    )
+    response = model.generate_content(prompt, generation_config=genai.types.GenerationConfig(temperature=0.0))
     return response.text
 
 # --- メイン設定 ---
-st.title("🚀 業務効率化アプリ")
+# 画面上部のタイトルを少しスタイリッシュに
+st.markdown("<h1>✨ 原稿審査＆添削アシスタント</h1>", unsafe_allow_html=True)
+st.markdown("---")
 
 LIST_POSSIBLE_ID = '1dGJl6SfeuveynLJ8Q65JDZVymQLMGcyd5ZW5vBD02_8' 
 LIST_PAST_ID = '1aftTvSvKS2yWxHNRNW6rDkrXTsXBw-mWqXViEfsLOMw' 
 
-mode = st.sidebar.selectbox("モード選択", ["1件検索&AI判定", "複数一括判定(最大10件)", "文章比較FB"])
+# サイドバーは「設定」だけにしてスッキリ！
+st.sidebar.markdown("### ⚙️ アプリ設定")
+pic_name = st.sidebar.selectbox("👤 スプシ登録用の担当者名", ["小山", "松下", "木村", "福島", "仲本"])
 
-if mode in ["1件検索&AI判定", "複数一括判定(最大10件)"]:
-    pic_name = st.sidebar.selectbox("👤 担当者名を選択", ["小山", "松下", "木村", "福島", "仲本"])
+# ★画面上部に「3つのタブ」を作成して、クリックで切り替えられるようにする！
+tab1, tab2, tab3 = st.tabs(["🔍 1件スピード審査", "🚀 複数一括審査 (最大10件)", "📝 文章比較 ＆ 文字数チェック"])
 
 # ==========================================
-# モード1：従来の1件ずつ丁寧に見るモード
+# タブ1：1件審査モード
 # ==========================================
-if mode == "1件検索&AI判定":
-    st.subheader("🔍 求人ID 1件判定 ＆ AI自動審査")
-    search_id = st.text_input("検索したい「求人ID」を入力", placeholder="例: 4445")
+with tab1:
+    st.markdown("### 🔍 1件スピード審査")
+    st.write("求人IDを入力して、AIによる規定チェックを瞬時に実行します。")
     
-    if st.button("判定実行"):
-        if search_id:
-            try:
-                with st.spinner('スプレッドシートのデータを準備中...（2回目以降は爆速です！）'):
-                   # 🌟 マスタ1（3万件）は記憶したデータを爆速で呼び出す！
-                    df1 = load_cached_dataframe(LIST_POSSIBLE_ID)
-                    # 🌟 マスタ2（転載確認シート）は、常に最新のデータを読みに行く！
-                    df2 = load_realtime_dataframe(LIST_PAST_ID, "転載確認シート")
-                    
-                    if '求人ID' not in df2.columns and not df2.empty:
-                        st.error("❌ マスタ2の1行目に「求人ID」という項目が見つかりません。")
-                        st.stop()
+    # 入力欄とボタンを横並びにしてスタイリッシュに
+    col_input, col_btn = st.columns([4, 1])
+    with col_input:
+        search_id = st.text_input("求人IDを入力してください", placeholder="例: 4445", label_visibility="collapsed")
+    with col_btn:
+        btn_single = st.button("✨ 判定実行", use_container_width=True, type="primary") # プライマリカラーで目立たせる
 
-                res1 = df1[df1['求人ID'] == search_id]
-
-                if res1.empty:
-                    st.error(f"❌ 判定結果：掲載対象外（リストに存在しません）")
-                else:
-                    st.info(f"💡 掲載可能リストに存在します（企業名: {res1.iloc[0]['企業名']}）")
-                    
-                    res2 = pd.DataFrame() if df2.empty else df2[df2['求人ID'] == search_id]
-
-                    if not res2.empty:
-                        st.error("❌ 判定結果：掲載不可（過去掲載リストと重複しています）")
-                        st.dataframe(res1)
-                    else:
-                        st.success("✅ スプシ判定クリア！続けてAI審査を行います...")
-                        
-                        with st.spinner('🤖 AIが規定をチェックしています...'):
-                            job_data_dict = res1.iloc[0].to_dict()
-                            ai_result = evaluate_job_with_ai(job_data_dict)
-                            
-                            st.markdown("### 🤖 AI自動審査レポート")
-                            if "❌" in ai_result:
-                                st.error(ai_result)
-                            else:
-                                st.success(ai_result)
-                                
-                                company_name = res1.iloc[0].get('企業名', '')
-                                job_name = res1.iloc[0].get('求人名', '')
-                                st.session_state.pending_regs[search_id] = [search_id, company_name, job_name, "", "", "", pic_name]
-                                st.info("💡 下部の「登録待ちリスト」にストックしました！確認後、手動で登録してください。")
-                            
-                            st.write("▼ 審査に使用したデータ")
-                            st.dataframe(res1)
-
-            except Exception as e:
-                st.error(f"エラーが発生しました: {e}")
-
-# ==========================================
-# モード2：複数一括モード
-# ==========================================
-elif mode == "複数一括判定(最大10件)":
-    st.subheader("🔍 求人ID 複数一括判定 ＆ AI自動審査 (最大10件)")
-    search_ids_input = st.text_area(
-        "検索したい「求人ID」を入力（改行して複数入力できます）", 
-        placeholder="例:\n4445\n4446\n4447",
-        height=150
-    )
-    
-    if st.button("一括判定実行"):
-        if search_ids_input:
-            raw_ids = search_ids_input.replace(',', '\n').split('\n')
-            search_ids = [sid.strip() for sid in raw_ids if sid.strip()]
-            search_ids = list(dict.fromkeys(search_ids))[:10]
-            
-            if not search_ids:
-                st.warning("有効な求人IDが入力されていません。")
-                st.stop()
+    if btn_single and search_id:
+        try:
+            with st.spinner('スプレッドシートからデータを取得中...'):
+                df1 = load_cached_dataframe(LIST_POSSIBLE_ID)
+                df2 = load_realtime_dataframe(LIST_PAST_ID, "転載確認シート")
                 
-            st.info(f"💡 合計 {len(search_ids)} 件の判定を開始します...")
+            res1 = df1[df1['求人ID'] == search_id]
 
-            try:
-                with st.spinner('スプレッドシートの全体データを準備中...（2回目以降は爆速です！）'):
-                   # 🌟 マスタ1（3万件）は記憶したデータを爆速で呼び出す！
-                    df1 = load_cached_dataframe(LIST_POSSIBLE_ID)
-                    # 🌟 マスタ2（転載確認シート）は、常に最新のデータを読みに行く！
-                    df2 = load_realtime_dataframe(LIST_PAST_ID, "転載確認シート")
-                    
-                    if '求人ID' not in df2.columns and not df2.empty:
-                        st.error("❌ マスタ2の1行目に「求人ID」という項目が見つかりません。")
-                        st.stop()
+            if res1.empty:
+                st.error("❌ 判定結果：掲載対象外（マスタ1に存在しません）")
+            else:
+                res2 = pd.DataFrame() if df2.empty else df2[df2['求人ID'] == search_id]
 
-                for i, search_id in enumerate(search_ids):
-                    st.markdown("---") 
-                    st.markdown(f"### 🎯 {i+1}件目: 求人ID `{search_id}`")
-                    
-                    res1 = df1[df1['求人ID'] == search_id]
-                    
-                    if res1.empty:
-                        st.error("❌ 判定結果：掲載対象外（マスタ1に存在しません）")
-                    else:
-                        st.info(f"💡 掲載可能リストに存在します（企業名: {res1.iloc[0]['企業名']}）")
+                if not res2.empty:
+                    st.error("❌ 判定結果：掲載不可（過去掲載リストと重複しています）")
+                    st.dataframe(res1, use_container_width=True)
+                else:
+                    st.success(f"✅ スプシ判定クリア！続けてAI審査を行います...（企業名: {res1.iloc[0]['企業名']}）")
+                    with st.spinner('🤖 AIが規定をチェックしています...'):
+                        ai_result = evaluate_job_with_ai(res1.iloc[0].to_dict())
                         
-                        res2 = pd.DataFrame() if df2.empty else df2[df2['求人ID'] == search_id]
-
-                        if not res2.empty:
-                            st.error("❌ 判定結果：掲載不可（過去掲載リストと重複しています）")
-                            st.dataframe(res1)
+                        st.markdown("#### 🤖 AI審査レポート")
+                        if "❌" in ai_result:
+                            st.error(ai_result)
                         else:
-                            st.success("✅ スプシ判定クリア！続けてAI審査を行います...")
+                            st.success(ai_result)
                             
-                            with st.spinner(f'🤖 ID:{search_id} をAIがチェックしています...'):
-                                job_data_dict = res1.iloc[0].to_dict()
-                                ai_result = evaluate_job_with_ai(job_data_dict)
-                                
+                            company_name = res1.iloc[0].get('企業名', '')
+                            job_name = res1.iloc[0].get('求人名', '')
+                            st.session_state.pending_regs[search_id] = [search_id, company_name, job_name, "", "", "", pic_name]
+                            st.info("💡 審査をクリアしました！画面最下部の「カート」にストックしました。")
+                        
+                        with st.expander("▼ 審査に使用した元データを確認する"):
+                            st.dataframe(res1, use_container_width=True)
+
+        except Exception as e:
+            st.error(f"エラーが発生しました: {e}")
+
+# ==========================================
+# タブ2：複数一括審査モード
+# ==========================================
+with tab2:
+    st.markdown("### 🚀 複数一括審査")
+    st.write("複数の求人IDを一気に判定し、結果をまとめて表示します。")
+    
+    search_ids_input = st.text_area("求人IDを入力（改行で複数入力可）", placeholder="4445\n4446\n4447", height=120)
+    btn_multi = st.button("🚀 一括判定スタート", type="primary")
+    
+    if btn_multi and search_ids_input:
+        raw_ids = search_ids_input.replace(',', '\n').split('\n')
+        search_ids = list(dict.fromkeys([sid.strip() for sid in raw_ids if sid.strip()]))[:10]
+        
+        if not search_ids:
+            st.warning("有効な求人IDが入力されていません。")
+        else:
+            try:
+                with st.spinner('スプレッドシートからデータを取得中...'):
+                    df1 = load_cached_dataframe(LIST_POSSIBLE_ID)
+                    df2 = load_realtime_dataframe(LIST_PAST_ID, "転載確認シート")
+
+                for i, sid in enumerate(search_ids):
+                    # 各結果をカード風に区切って見やすくする
+                    st.markdown(f"#### 🎯 {i+1}件目: ID `{sid}`")
+                    
+                    res1 = df1[df1['求人ID'] == sid]
+                    if res1.empty:
+                        st.error("❌ マスタ1に存在しません")
+                    else:
+                        res2 = pd.DataFrame() if df2.empty else df2[df2['求人ID'] == sid]
+                        if not res2.empty:
+                            st.error("❌ 過去掲載リストと重複しています")
+                        else:
+                            with st.spinner('🤖 AIチェック中...'):
+                                ai_result = evaluate_job_with_ai(res1.iloc[0].to_dict())
                                 if "❌" in ai_result:
                                     st.error(ai_result)
                                 else:
                                     st.success(ai_result)
-                                    
                                     company_name = res1.iloc[0].get('企業名', '')
                                     job_name = res1.iloc[0].get('求人名', '')
-                                    st.session_state.pending_regs[search_id] = [search_id, company_name, job_name, "", "", "", pic_name]
-                                    st.info("💡 下部の「登録待ちリスト」にストックしました！確認後、手動で登録してください。")
-                                
-                                with st.expander("▼ 審査に使用したデータ（クリックで開く）"):
-                                    st.dataframe(res1)
-
+                                    st.session_state.pending_regs[sid] = [sid, company_name, job_name, "", "", "", pic_name]
+                    st.markdown("---")
             except Exception as e:
                 st.error(f"エラーが発生しました: {e}")
 
 # ==========================================
-# ★スプシ登録待ちリストと手動登録ボタン
+# タブ3：文章比較FBモード
 # ==========================================
-if mode in ["1件検索&AI判定", "複数一括判定(最大10件)"]:
-    if st.session_state.pending_regs:
-        st.markdown("---")
-        st.markdown("## 🛒 スプシ登録待ちリスト")
-        st.caption("審査をクリアした求人がここにストックされています。確認後、手動で登録ボタンを押してください！")
-        
-        for sid, row_data in list(st.session_state.pending_regs.items()):
-            with st.container():
-                col1, col2 = st.columns([4, 1])
-                with col1:
-                    st.markdown(f"🏢 **{row_data[1]}** (ID: `{sid}`) ／ 👤 担当: {row_data[6]}")
-                with col2:
-                    if st.button("📝 スプシに登録", key=f"reg_{sid}"):
-                        try:
-                            with st.spinner("登録中..."):
-                                ws2 = get_worksheet(LIST_PAST_ID, "転載確認シート")
-                                ws2.append_row(row_data)
-                                
-                            st.success(f"「{row_data[1]}」を登録しました！")
-                            del st.session_state.pending_regs[sid]
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"エラーが発生しました: {e}")
-
-# ==========================================
-# モード3：文章比較FB（ミスチェック）
-# ==========================================
-elif mode == "文章比較FB":
-    st.subheader("📝 文章比較 ＆ ミス・NGワードチェック")
-    st.write("元となる文章（A）と、チェックしたい文章（B）を貼り付けてください。")
-
-    col1, col2 = st.columns(2)
-    with col1:
-        text_a = st.text_area("【A】circus掲載内容", height=200, placeholder="ここに元の文章を貼り付けます")
-    with col2:
-        text_b = st.text_area("【B】Qmate掲載内容", height=200, placeholder="ここに作成した文章を貼り付けます")
+with tab3:
+    st.markdown("### 📝 文章比較 ＆ 文字数・NGワードチェック")
+    
+    col_a, col_b = st.columns(2)
+    with col_a:
+        text_a = st.text_area("📄 【A】circus掲載内容 (元データ)", height=250)
+    with col_b:
+        text_b = st.text_area("✍️ 【B】Qmate掲載内容 (チェック対象)", height=250)
 
     try:
-        with st.spinner('スプレッドシートから最新のNGワードを読み込み中...'):
-            ws_ng = get_worksheet(LIST_PAST_ID, "転載情報")
-            ng_raw_text = ws_ng.acell('B2').value
-            
-            if ng_raw_text:
-                ng_text = ng_raw_text.replace("NGワード：", "").replace("NGワード:", "")
-                default_ng_words = ng_text.replace("・", ", ").strip()
-            else:
-                default_ng_words = ""
-                
-    except Exception as e:
-        default_ng_words = "絶対, 必ず, 日本一, 最高"
-        st.warning(f"⚠️ NGワードが読み込めなかったため、仮のNGワードを使用します。エラー: {e}")
+        ws_ng = get_worksheet(LIST_PAST_ID, "転載情報")
+        ng_raw = ws_ng.acell('B2').value
+        default_ng = ng_raw.replace("NGワード：", "").replace("NGワード:", "").replace("・", ", ").strip() if ng_raw else ""
+    except:
+        default_ng = "絶対, 必ず, 日本一, 最高"
+        
+    ng_words_input = st.text_input("🚫 今日のNGワード", value=default_ng)
 
-    ng_words_input = st.text_input("🚫 今日のNGワード（スプシから自動読込 / ここで一時的な変更も可能）", value=default_ng_words)
-
-    if st.button("ミスチェック実行"):
+    if st.button("✨ ミスチェック実行", type="primary"):
         if not text_a or not text_b:
             st.warning("AとBの両方に文章を入力してください！")
-            st.stop()
-
-        # ★アップデート：すべての「〇/〇」を抽出して一括チェック！
-        st.markdown("### 📊 文字数チェック")
-        
-        import re 
-        
-        # Bの文章の中から「数字/数字」のパターンを【すべて】探し出す！
-        matches = list(re.finditer(r'(\d+)\s*/\s*(\d+)', text_b))
-        
-        if matches:
-            over_list = []
-            clear_count = 0
-            
-            # 見つかったすべての数字をループで1つずつチェック
-            for match in matches:
-                current_len = int(match.group(1)) # 左側の数字（現在の文字数）
-                max_len = int(match.group(2))     # 右側の数字（制限文字数）
-                
-                if current_len <= max_len:
-                    clear_count += 1
-                else:
-                    over_list.append((current_len, max_len))
-            
-            # 結果をまとめて表示
-            if len(over_list) == 0:
-                st.success(f"✨ すべての文字数制限（全{clear_count}箇所）をクリアしています！")
-            else:
-                st.error(f"❌ {len(over_list)}箇所の文字数オーバーが見つかりました！")
-                for current, maximum in over_list:
-                    st.write(f"・ ⚠️ **{current} / {maximum}文字** （{current - maximum}文字オーバー）")
-                
-                st.info(f"✅ 残りの {clear_count}箇所 はクリアしています。")
-                
         else:
-            st.warning("⚠️ Bの文章の中に「〇/〇」の表記が見つかりませんでした。")
-            st.info(f"（参考）純粋な入力文字数 - A: {len(text_a)}文字 / B: {len(text_b)}文字")
-
-        with st.spinner('🤖 AIが違いとNGワードをくまなく探しています...'):
-            try:
+            st.markdown("#### 📊 文字数・表記チェック結果")
+            matches = list(re.finditer(r'(\d+)\s*/\s*(\d+)', text_b))
+            
+            # ダッシュボード風の数字パネル（Metric）でカッコよく！
+            col_m1, col_m2, col_m3 = st.columns(3)
+            col_m1.metric("全体文字数 (A)", f"{len(text_a)} 文字")
+            col_m2.metric("全体文字数 (B)", f"{len(text_b)} 文字")
+            col_m3.metric("文字数制限のチェック数", f"{len(matches)} 箇所")
+            
+            if matches:
+                over_list = []
+                for match in matches:
+                    curr, m_max = int(match.group(1)), int(match.group(2))
+                    if curr > m_max:
+                        over_list.append((curr, m_max))
+                
+                if not over_list:
+                    st.success(f"✨ すべての文字数制限（全{len(matches)}箇所）をクリアしています！")
+                else:
+                    st.error(f"❌ {len(over_list)}箇所の文字数オーバーが見つかりました！")
+                    for curr, m_max in over_list:
+                        st.write(f"・ ⚠️ **{curr} / {m_max}文字** （{curr - m_max}文字オーバー）")
+            
+            st.markdown("#### 🤖 AI 転記ミス・NGワードレポート")
+            with st.spinner('AIがくまなく探しています...'):
                 genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
                 model = genai.GenerativeModel('gemini-2.5-flash')
-                
                 prompt = f"""
                 あなたはプロの校正者です。
-                以下の「circus掲載内容（正しいデータ）」と「Qmate掲載内容（チェック対象）」を比較し、厳格にチェックを行ってください。
-
-                【circus掲載内容】
-                {text_a}
-
-                【Qmate掲載内容】
-                {text_b}
-
-                【NGワード（使用禁止ワード）】
-                {ng_words_input}
-
-                【チェック項目と出力形式】
-                以下の2点について、見出しをつけて分かりやすくレポートしてください。
-
-                1. 転記ミス・違いの指摘
-                - 両者を比較し、意味が変わっている部分、抜け漏れ、誤字脱字、数字のズレがあれば指摘してください。
-                - 特に問題がない場合は「✅ 転記ミスや違いは見当たりません」と出力してください。
-
+                以下の「circus掲載内容」と「Qmate掲載内容」を比較し、厳格にチェックを行ってください。
+                【circus掲載内容】\n{text_a}\n
+                【Qmate掲載内容】\n{text_b}\n
+                【NGワード】\n{ng_words_input}\n
+                1. 転記ミス・違いの指摘 (意味の変更、抜け漏れ、数字のズレ)
                 2. NGワードチェック
-                - 【Qmate掲載内容】の中に、【NGワード】に含まれる言葉が入っていないかチェックしてください。
-                - もし含まれていた場合、どの部分で使われているかを指摘し、可能であれば言い換えの提案をしてください。
-                - 含まれていない場合は「✅ NGワードは含まれていません」と出力してください。
                 """
-
-                response = model.generate_content(
-                    prompt,
-                    generation_config=genai.types.GenerationConfig(temperature=0.0)
-                )
-                
-                st.markdown("### 🤖 AI校正レポート")
+                response = model.generate_content(prompt, generation_config=genai.types.GenerationConfig(temperature=0.0))
                 st.write(response.text)
 
-            except Exception as e:
-                st.error(f"AIチェック中にエラーが発生しました: {e}")
+# ==========================================
+# ★共通：カート機能（登録待ちリスト）
+# ==========================================
+if st.session_state.pending_regs:
+    # 画面の一番下に、固定で表示されるようなデザインにする
+    st.markdown("<br><br>", unsafe_allow_html=True)
+    st.markdown("---")
+    st.markdown("## 🛒 スプシ登録待ちリスト")
+    st.caption("審査をクリアした求人がここにストックされています。確認後、登録ボタンを押してください。")
+    
+    for sid, row_data in list(st.session_state.pending_regs.items()):
+        with st.container():
+            col1, col2 = st.columns([4, 1])
+            with col1:
+                st.info(f"🏢 **{row_data[1]}** (ID: `{sid}`) ／ 👤 担当: {row_data[6]}")
+            with col2:
+                if st.button("📝 スプシに登録", key=f"reg_{sid}", type="primary"):
+                    try:
+                        with st.spinner("登録中..."):
+                            ws2 = get_worksheet(LIST_PAST_ID, "転載確認シート")
+                            ws2.append_row(row_data)
+                        st.success(f"「{row_data[1]}」を登録しました！")
+                        del st.session_state.pending_regs[sid]
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"登録エラー: {e}")
 
 
 
