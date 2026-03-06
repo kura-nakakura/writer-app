@@ -25,10 +25,21 @@ def get_worksheet(sheet_id, sheet_name=None):
     else:
         return sh.get_worksheet(0)
 
-# --- 🌟 爆速化の要：スプシデータを暗記する関数 ---
-# ttl=3600 で「3600秒（1時間）」だけ記憶します。
+# --- 🌟 爆速化の要：スプシデータを暗記する関数（マスタ1用） ---
 @st.cache_data(ttl=3600)
 def load_cached_dataframe(sheet_id, sheet_name=None):
+    ws = get_worksheet(sheet_id, sheet_name)
+    all_data = ws.get_all_values()
+    if len(all_data) < 2:
+        return pd.DataFrame()
+    df = pd.DataFrame(all_data[1:], columns=all_data[0])
+    df.columns = [str(col).strip() for col in df.columns]
+    df = df.loc[:, ~df.columns.duplicated()]
+    df = df.loc[:, df.columns != '']
+    return df
+
+# --- 🌟 常に最新のデータを読み込む関数（マスタ2用・暗記しない） ---
+def load_realtime_dataframe(sheet_id, sheet_name=None):
     ws = get_worksheet(sheet_id, sheet_name)
     all_data = ws.get_all_values()
     if len(all_data) < 2:
@@ -92,9 +103,10 @@ if mode == "1件検索&AI判定":
         if search_id:
             try:
                 with st.spinner('スプレッドシートのデータを準備中...（2回目以降は爆速です！）'):
-                    # 🌟 記憶したデータを一瞬で呼び出す
+                   # 🌟 マスタ1（3万件）は記憶したデータを爆速で呼び出す！
                     df1 = load_cached_dataframe(LIST_POSSIBLE_ID)
-                    df2 = load_cached_dataframe(LIST_PAST_ID, "転載確認シート")
+                    # 🌟 マスタ2（転載確認シート）は、常に最新のデータを読みに行く！
+                    df2 = load_realtime_dataframe(LIST_PAST_ID, "転載確認シート")
                     
                     if '求人ID' not in df2.columns and not df2.empty:
                         st.error("❌ マスタ2の1行目に「求人ID」という項目が見つかりません。")
@@ -161,9 +173,10 @@ elif mode == "複数一括判定(最大10件)":
 
             try:
                 with st.spinner('スプレッドシートの全体データを準備中...（2回目以降は爆速です！）'):
-                    # 🌟 記憶したデータを一瞬で呼び出す
+                   # 🌟 マスタ1（3万件）は記憶したデータを爆速で呼び出す！
                     df1 = load_cached_dataframe(LIST_POSSIBLE_ID)
-                    df2 = load_cached_dataframe(LIST_PAST_ID, "転載確認シート")
+                    # 🌟 マスタ2（転載確認シート）は、常に最新のデータを読みに行く！
+                    df2 = load_realtime_dataframe(LIST_PAST_ID, "転載確認シート")
                     
                     if '求人ID' not in df2.columns and not df2.empty:
                         st.error("❌ マスタ2の1行目に「求人ID」という項目が見つかりません。")
@@ -228,9 +241,6 @@ if mode in ["1件検索&AI判定", "複数一括判定(最大10件)"]:
                             with st.spinner("登録中..."):
                                 ws2 = get_worksheet(LIST_PAST_ID, "転載確認シート")
                                 ws2.append_row(row_data)
-                                
-                                # 🌟【超重要】新しくデータを登録したので、古い記憶を強制的に消去する！
-                                load_cached_dataframe.clear()
                                 
                             st.success(f"「{row_data[1]}」を登録しました！")
                             del st.session_state.pending_regs[sid]
@@ -324,6 +334,7 @@ elif mode == "文章比較FB":
 
             except Exception as e:
                 st.error(f"AIチェック中にエラーが発生しました: {e}")
+
 
 
 
