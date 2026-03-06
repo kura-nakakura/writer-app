@@ -5,102 +5,82 @@ import pandas as pd
 import google.generativeai as genai
 import json
 import re
+import contextlib # ★新機能：カスタムローディング用
 
-# --- ページ設定（アイコンを雲☁️にして、より淡色系に！） ---
+# --- ページ設定 ---
 st.set_page_config(page_title="求人原稿 自動審査ツール", page_icon="☁️", layout="wide")
 
 # --- 🤍 カスタムCSS（韓国風ミニマルデザインの魔法） ---
 st.markdown("""
 <style>
-    /* 1. 全体の背景を、洗練されたライトブルーグレーに */
-    .stApp {
-        background-color: #F5F7FA !important; 
-    }
-
-    /* 2. 文字色は真っ黒ではなく「ダークグレー」にして抜け感を出す */
-    h1, h2, h3, h4, h5, h6, p, span, label, div {
-        color: #4A4A4A !important; 
-    }
-
-    /* 3. 区切り線（hr）を淡いグレーに */
-    hr {
-        border-bottom: 2px solid #E2E8F0 !important; 
-        border-top: none !important;
-        margin-top: 20px;
-        margin-bottom: 20px;
-    }
-
-    /* 4. 入力欄は真っ白＆角を少し丸くして柔らかい印象に */
+    /* 全体の背景 */
+    .stApp { background-color: #F5F7FA !important; }
+    /* 文字色 */
+    h1, h2, h3, h4, h5, h6, p, span, label, div { color: #4A4A4A !important; }
+    /* 区切り線 */
+    hr { border-bottom: 2px solid #E2E8F0 !important; border-top: none !important; margin: 20px 0; }
+    /* 入力欄 */
     .stTextInput input, .stTextArea textarea {
-        background-color: #FFFFFF !important; 
-        color: #4A4A4A !important;
-        border: 1px solid #D0D7E1 !important; 
-        border-radius: 12px !important; /* 角丸 */
-        box-shadow: inset 0 1px 3px rgba(0,0,0,0.02) !important;
+        background-color: #FFFFFF !important; color: #4A4A4A !important;
+        border: 1px solid #D0D7E1 !important; border-radius: 12px !important;
     }
-    .stTextInput input::placeholder, .stTextArea textarea::placeholder {
-        color: #A0AABF !important; /* プレースホルダーも淡く */
-    }
-
-    /* 5. セレクトボックス（担当者選択など）も角丸の白に */
+    .stTextInput input::placeholder, .stTextArea textarea::placeholder { color: #A0AABF !important; }
     .stSelectbox div[data-baseweb="select"] > div {
-        background-color: #FFFFFF !important;
-        border: 1px solid #D0D7E1 !important;
-        border-radius: 12px !important;
+        background-color: #FFFFFF !important; border: 1px solid #D0D7E1 !important; border-radius: 12px !important;
     }
-
-    /* 6. ボタンのデザイン（おしゃれな「くすみブルー」） */
+    /* ボタン */
     .stButton > button {
-        background-color: #7A9EBA !important; /* スレートブルー */
-        color: #FFFFFF !important;
-        border: none !important;
-        border-radius: 12px !important; /* 角丸 */
-        font-weight: bold !important;
-        box-shadow: 0 4px 10px rgba(122, 158, 186, 0.3) !important; /* ボタンの周りにふんわり青い影 */
-        transition: all 0.3s ease; /* マウスを乗せた時にフワッと動く魔法 */
+        background-color: #7A9EBA !important; color: #FFFFFF !important;
+        border: none !important; border-radius: 12px !important; font-weight: bold !important;
+        box-shadow: 0 4px 10px rgba(122, 158, 186, 0.3) !important; transition: all 0.3s ease;
     }
     .stButton > button:hover {
-        background-color: #6385A1 !important; /* マウスを乗せると少し濃くなる */
-        transform: translateY(-2px) !important; /* 少し浮き上がる */
+        background-color: #6385A1 !important; transform: translateY(-2px) !important;
     }
-
-    /* 7. タブのデザイン（下線をくすみブルーに） */
+    /* ★修正：タブの赤い下線をくすみブルーに強制上書き！ */
+    div[data-baseweb="tab-highlight"] {
+        background-color: #7A9EBA !important;
+    }
     .stTabs [data-baseweb="tab-list"] {
-        border-bottom: 2px solid #E2E8F0 !important;
-        background-color: transparent !important;
+        border-bottom: 2px solid #E2E8F0 !important; background-color: transparent !important;
     }
-    .stTabs [data-baseweb="tab"] {
-        background-color: transparent !important;
-    }
+    .stTabs [data-baseweb="tab"] { background-color: transparent !important; }
     .stTabs [data-baseweb="tab-list"] button [data-testid="stMarkdownContainer"] p {
-        font-size: 18px !important;
-        font-weight: bold !important;
-        color: #7A9EBA !important; /* タブの文字もくすみブルー */
+        font-size: 18px !important; font-weight: bold !important; color: #7A9EBA !important;
     }
-
-    /* 8. 数字パネル（Metric）やアラートを「白いふんわりカード」にする */
+    /* パネル */
     [data-testid="stMetric"], [data-testid="stAlert"] {
-        background-color: #FFFFFF !important;
-        border: 1px solid #E2E8F0 !important;
-        padding: 15px !important;
-        border-radius: 12px !important;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.03) !important; /* ほんのり影をつける */
+        background-color: #FFFFFF !important; border: 1px solid #E2E8F0 !important;
+        padding: 15px !important; border-radius: 12px !important; box-shadow: 0 4px 12px rgba(0,0,0,0.03) !important;
     }
-    
-    /* 9. データフレーム（表）の背景も白に */
-    [data-testid="stDataFrame"] {
-        background-color: #FFFFFF !important;
-        border: 1px solid #E2E8F0 !important;
-        border-radius: 8px !important;
-    }
+    [data-testid="stDataFrame"] { background-color: #FFFFFF !important; border: 1px solid #E2E8F0 !important; border-radius: 8px !important; }
 </style>
 """, unsafe_allow_html=True)
 
-# --- 状態管理（カート機能） ---
+# --- ★新機能：動画が流れるカスタムローディング画面 ---
+@contextlib.contextmanager
+def custom_spinner(text="処理中..."):
+    # ローディング中だけ表示される特別な「箱（プレースホルダー）」を作る
+    placeholder = st.empty()
+    with placeholder.container():
+        st.markdown(f"<h4 style='text-align: center; color: #7A9EBA; margin-top: 20px;'>{text}</h4>", unsafe_allow_html=True)
+        
+        # 🎬 動画を流す場合は、以下の「#」を消して、ファイル名を自分の動画に合わせてください！
+        # st.video("loading.mp4", autoplay=True, loop=True, muted=True)
+        
+        # （参考）もし動画ではなくGIF画像（loading.gif）を使いたい場合はこちら↓
+        # st.image("loading.gif", use_container_width=True)
+        
+    try:
+        yield # ここで裏側の重い処理（AI審査など）が走ります
+    finally:
+        placeholder.empty() # 処理が終わったら動画の箱ごと綺麗に消し去る！
+
+# --- 状態管理 ---
 if "pending_regs" not in st.session_state:
     st.session_state.pending_regs = {}
 
-# --- Googleスプシ接続関数 ---
+# --- Googleスプシ接続 ＆ 読み込み関数 ---
 @st.cache_resource
 def get_worksheet(sheet_id, sheet_name=None):
     scope = ['https://spreadsheets.google.com/feeds','https://www.googleapis.com/auth/drive']
@@ -108,34 +88,26 @@ def get_worksheet(sheet_id, sheet_name=None):
     creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
     client = gspread.authorize(creds)
     sh = client.open_by_key(sheet_id)
-    if sheet_name:
-        return sh.worksheet(sheet_name)
-    else:
-        return sh.get_worksheet(0)
+    return sh.worksheet(sheet_name) if sheet_name else sh.get_worksheet(0)
 
-# --- スプシ読み込み関数 ---
 @st.cache_data(ttl=3600)
 def load_cached_dataframe(sheet_id, sheet_name=None):
     ws = get_worksheet(sheet_id, sheet_name)
     all_data = ws.get_all_values()
-    if len(all_data) < 2:
-        return pd.DataFrame()
+    if len(all_data) < 2: return pd.DataFrame()
     df = pd.DataFrame(all_data[1:], columns=all_data[0])
     df.columns = [str(col).strip() for col in df.columns]
     df = df.loc[:, ~df.columns.duplicated()]
-    df = df.loc[:, df.columns != '']
-    return df
+    return df.loc[:, df.columns != '']
 
 def load_realtime_dataframe(sheet_id, sheet_name=None):
     ws = get_worksheet(sheet_id, sheet_name)
     all_data = ws.get_all_values()
-    if len(all_data) < 2:
-        return pd.DataFrame()
+    if len(all_data) < 2: return pd.DataFrame()
     df = pd.DataFrame(all_data[1:], columns=all_data[0])
     df.columns = [str(col).strip() for col in df.columns]
     df = df.loc[:, ~df.columns.duplicated()]
-    df = df.loc[:, df.columns != '']
-    return df
+    return df.loc[:, df.columns != '']
 
 # --- 🤖 AI審査関数 ---
 def evaluate_job_with_ai(job_data_dict):
@@ -145,9 +117,7 @@ def evaluate_job_with_ai(job_data_dict):
     あなたは厳格な求人原稿の審査プロフェッショナルです。
     以下の【求人データ】が、【審査規定】を満たしているかチェックしてください。
 
-    【求人データ】
-    {json.dumps(job_data_dict, ensure_ascii=False, indent=2)}
-
+    【求人データ】\n{json.dumps(job_data_dict, ensure_ascii=False, indent=2)}\n
     【審査規定】
     1. 基本給・月給: 最低賃金割れの懸念がないか。金額や内訳が不明瞭でないか。
     2. 固定残業代: 「金額」と「時間」の両方が明記されているか。原則45時間を超える記載や範囲が不明確な記載がないか。
@@ -163,27 +133,23 @@ def evaluate_job_with_ai(job_data_dict):
     return response.text
 
 # --- メイン設定 ---
-# 画面上部のタイトルを少しスタイリッシュに
 st.markdown("<h1>☁️ 原稿審査＆添削アシスタント</h1>", unsafe_allow_html=True)
 st.markdown("---")
 
 LIST_POSSIBLE_ID = '1dGJl6SfeuveynLJ8Q65JDZVymQLMGcyd5ZW5vBD02_8' 
 LIST_PAST_ID = '1aftTvSvKS2yWxHNRNW6rDkrXTsXBw-mWqXViEfsLOMw' 
 
-# サイドバー
 st.sidebar.markdown("### ⚙️ アプリ設定")
 pic_name = st.sidebar.selectbox("👤 スプシ登録用の担当者名", ["小山", "松下", "木村", "福島", "仲本"])
 
-# ★画面上部の3つのタブ
-tab1, tab2, tab3 = st.tabs(["🔍 1件スピード審査", "🚀 複数一括審査 (最大10件)", "📝 文章比較 ＆ 文字数チェック"])
+# ★絵文字を「淡色系」に変更！
+tab1, tab2, tab3 = st.tabs(["🤍 1件スピード審査", "☁️ 複数一括審査 (最大10件)", "🫧 文章比較 ＆ 文字数チェック"])
 
 # ==========================================
 # タブ1：1件審査モード
 # ==========================================
 with tab1:
-    st.markdown("### 🔍 1件スピード審査")
-    st.write("求人IDを入力して、AIによる規定チェックを瞬時に実行します。")
-    
+    st.markdown("### 🤍 1件スピード審査")
     col_input, col_btn = st.columns([4, 1])
     with col_input:
         search_id = st.text_input("求人IDを入力してください", placeholder="例: 4445", label_visibility="collapsed")
@@ -192,7 +158,7 @@ with tab1:
 
     if btn_single and search_id:
         try:
-            with st.spinner('スプレッドシートからデータを取得中...'):
+            with custom_spinner('☁️ スプレッドシートからデータを取得中...'):
                 df1 = load_cached_dataframe(LIST_POSSIBLE_ID)
                 df2 = load_realtime_dataframe(LIST_PAST_ID, "転載確認シート")
                 
@@ -202,13 +168,13 @@ with tab1:
                 st.error("❌ 判定結果：掲載対象外（マスタ1に存在しません）")
             else:
                 res2 = pd.DataFrame() if df2.empty else df2[df2['求人ID'] == search_id]
-
                 if not res2.empty:
                     st.error("❌ 判定結果：掲載不可（過去掲載リストと重複しています）")
                     st.dataframe(res1, use_container_width=True)
                 else:
                     st.success(f"✅ スプシ判定クリア！続けてAI審査を行います...（企業名: {res1.iloc[0]['企業名']}）")
-                    with st.spinner('🤖 AIが規定をチェックしています...'):
+                    
+                    with custom_spinner('🪄 AIが規定をチェックしています...'):
                         ai_result = evaluate_job_with_ai(res1.iloc[0].to_dict())
                         
                         st.markdown("#### 🤖 AI審査レポート")
@@ -216,7 +182,6 @@ with tab1:
                             st.error(ai_result)
                         else:
                             st.success(ai_result)
-                            
                             company_name = res1.iloc[0].get('企業名', '')
                             job_name = res1.iloc[0].get('求人名', '')
                             st.session_state.pending_regs[search_id] = [search_id, company_name, job_name, "", "", "", pic_name]
@@ -232,11 +197,9 @@ with tab1:
 # タブ2：複数一括審査モード
 # ==========================================
 with tab2:
-    st.markdown("### 🚀 複数一括審査")
-    st.write("複数の求人IDを一気に判定し、結果をまとめて表示します。")
-    
+    st.markdown("### ☁️ 複数一括審査")
     search_ids_input = st.text_area("求人IDを入力（改行で複数入力可）", placeholder="4445\n4446\n4447", height=120)
-    btn_multi = st.button("🚀 一括判定スタート", type="primary")
+    btn_multi = st.button("✨ 一括判定スタート", type="primary")
     
     if btn_multi and search_ids_input:
         raw_ids = search_ids_input.replace(',', '\n').split('\n')
@@ -246,13 +209,12 @@ with tab2:
             st.warning("有効な求人IDが入力されていません。")
         else:
             try:
-                with st.spinner('スプレッドシートからデータを取得中...'):
+                with custom_spinner('☁️ スプレッドシートからデータを取得中...'):
                     df1 = load_cached_dataframe(LIST_POSSIBLE_ID)
                     df2 = load_realtime_dataframe(LIST_PAST_ID, "転載確認シート")
 
                 for i, sid in enumerate(search_ids):
                     st.markdown(f"#### 🎯 {i+1}件目: ID `{sid}`")
-                    
                     res1 = df1[df1['求人ID'] == sid]
                     if res1.empty:
                         st.error("❌ マスタ1に存在しません")
@@ -261,7 +223,7 @@ with tab2:
                         if not res2.empty:
                             st.error("❌ 過去掲載リストと重複しています")
                         else:
-                            with st.spinner('🤖 AIチェック中...'):
+                            with custom_spinner(f'🪄 ID:{sid} をAIチェック中...'):
                                 ai_result = evaluate_job_with_ai(res1.iloc[0].to_dict())
                                 if "❌" in ai_result:
                                     st.error(ai_result)
@@ -278,7 +240,7 @@ with tab2:
 # タブ3：文章比較FBモード
 # ==========================================
 with tab3:
-    st.markdown("### 📝 文章比較 ＆ 文字数・NGワードチェック")
+    st.markdown("### 🫧 文章比較 ＆ 文字数・NGワードチェック")
     
     col_a, col_b = st.columns(2)
     with col_a:
@@ -289,7 +251,8 @@ with tab3:
     try:
         ws_ng = get_worksheet(LIST_PAST_ID, "転載情報")
         ng_raw = ws_ng.acell('B2').value
-        default_ng = ng_raw.replace("NGワード：", "").replace("NGワード:", "").replace("・", ", ").strip() if ng_raw else ""
+        # ★小ワザ：スプシ内で改行されていても綺麗に読み込めるように処理を追加しました
+        default_ng = ng_raw.replace("\n", "").replace("NGワード：", "").replace("NGワード:", "").replace("・", ", ").strip() if ng_raw else ""
     except:
         default_ng = "絶対, 必ず, 日本一, 最高"
         
@@ -311,8 +274,7 @@ with tab3:
                 over_list = []
                 for match in matches:
                     curr, m_max = int(match.group(1)), int(match.group(2))
-                    if curr > m_max:
-                        over_list.append((curr, m_max))
+                    if curr > m_max: over_list.append((curr, m_max))
                 
                 if not over_list:
                     st.success(f"✨ すべての文字数制限（全{len(matches)}箇所）をクリアしています！")
@@ -322,7 +284,7 @@ with tab3:
                         st.write(f"・ ⚠️ **{curr} / {m_max}文字** （{curr - m_max}文字オーバー）")
             
             st.markdown("#### 🤖 AI 転記ミス・NGワードレポート")
-            with st.spinner('AIがくまなく探しています...'):
+            with custom_spinner('🪄 AIがくまなく探しています...'):
                 genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
                 model = genai.GenerativeModel('gemini-2.5-flash')
                 prompt = f"""
@@ -354,7 +316,7 @@ if st.session_state.pending_regs:
             with col2:
                 if st.button("📝 スプシに登録", key=f"reg_{sid}", type="primary"):
                     try:
-                        with st.spinner("登録中..."):
+                        with custom_spinner("☁️ スプシに登録中..."):
                             ws2 = get_worksheet(LIST_PAST_ID, "転載確認シート")
                             ws2.append_row(row_data)
                         st.success(f"「{row_data[1]}」を登録しました！")
