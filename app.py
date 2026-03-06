@@ -227,24 +227,19 @@ elif mode == "文章比較FB":
     # --- 🌟 ここがスプシ連携のスーパーパワー！ ---
     try:
         with st.spinner('スプレッドシートから最新のNGワードを読み込み中...'):
-            # マスタ2の「転載情報」シートを読み込む
             ws_ng = get_worksheet(LIST_PAST_ID, "転載情報")
-            
-            # B2セル（結合されていても一番左上のB2を指定すればOK）の値を取得
             ng_raw_text = ws_ng.acell('B2').value
             
-           if ng_raw_text:
-                # 1. 「NGワード：」という最初の文字を消す（全角・半角どちらにも対応）
+            if ng_raw_text:
+                # 1. 「NGワード：」という最初の文字を消す
                 ng_text = ng_raw_text.replace("NGワード：", "").replace("NGワード:", "")
                 
-                # 2. 【修正】🔶も立派なNGワードなので、消す処理をなくしました！
-                
-                # 3. 「・」をカンマとスペース「, 」に変換して、AIが分かりやすい形にする
+                # 2. 「・」をカンマとスペース「, 」に変換（🔶はそのまま残ります！）
                 default_ng_words = ng_text.replace("・", ", ").strip()
             else:
+                default_ng_words = ""
                 
     except Exception as e:
-        # 万が一読み込めなかった時のための予備
         default_ng_words = "絶対, 必ず, 日本一, 最高"
         st.warning(f"⚠️ NGワードが読み込めなかったため、仮のNGワードを使用します。エラー: {e}")
 
@@ -311,4 +306,5 @@ elif mode == "文章比較FB":
 
             except Exception as e:
                 st.error(f"AIチェック中にエラーが発生しました: {e}")
+
 
