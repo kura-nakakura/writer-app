@@ -7,27 +7,92 @@ import json
 import re
 
 # --- ページ設定（ここで横幅を広くし、アイコンを設定） ---
-st.set_page_config(page_title="求人原稿 自動審査ツール", page_icon="✨", layout="wide")
+st.set_page_config(page_title="求人原稿 自動審査ツール", page_icon="🌿", layout="wide")
 
-# --- 🎨 カスタムCSS（オシャレにする魔法） ---
+# --- 🌳 カスタムCSS（自然系デザインの魔法） ---
 st.markdown("""
 <style>
-    /* 全体の背景をほんのり優しいグレーにして、メイン画面を際立たせる */
+    /* 1. アプリ全体の背景を深緑に設定 */
     .stApp {
-        background-color: #F8F9FA;
+        background-color: #274029 !important; /* 深緑 */
     }
-    /* タブの文字を大きく、太くする */
-    .stTabs [data-baseweb="tab-list"] button [data-testid="stMarkdownContainer"] p {
-        font-size: 18px;
-        font-weight: bold;
+
+    /* 2. 基本的な文字をすべて白色に統一 */
+    h1, h2, h3, h4, h5, h6, p, span, label, div {
+        color: #F8F9FA !important; /* 真っ白より少し優しいオフホワイト */
     }
-    /* 枠線付きコンテナ（カード風デザイン） */
-    .custom-card {
-        background-color: #FFFFFF;
-        padding: 20px;
-        border-radius: 10px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+
+    /* 3. 区切り線（hr）を焦げ茶色に */
+    hr {
+        border-bottom: 2px solid #5C3A21 !important; /* 焦げ茶色 */
+        border-top: none !important;
+        margin-top: 20px;
         margin-bottom: 20px;
+    }
+
+    /* 4. 入力欄（テキストエリアやインプット）のデザイン */
+    .stTextInput input, .stTextArea textarea {
+        background-color: #1E2E1F !important; /* 背景よりさらに深い緑 */
+        color: #FFFFFF !important;
+        border: 2px solid #5C3A21 !important; /* 焦げ茶色の枠線 */
+        border-radius: 8px !important;
+    }
+    .stTextInput input::placeholder, .stTextArea textarea::placeholder {
+        color: #8fa38f !important; /* プレースホルダー（例：）の文字色を薄い緑に */
+    }
+
+    /* 5. セレクトボックス（担当者選択など） */
+    .stSelectbox div[data-baseweb="select"] > div {
+        background-color: #1E2E1F !important;
+        border: 2px solid #5C3A21 !important;
+        border-radius: 8px !important;
+    }
+
+    /* 6. ボタンのデザイン（木をイメージした焦げ茶ベース） */
+    .stButton > button {
+        background-color: #5C3A21 !important; /* 焦げ茶色 */
+        color: #FFFFFF !important;
+        border: 1px solid #8B5A2B !important;
+        border-radius: 8px !important;
+        font-weight: bold !important;
+    }
+    .stButton > button:hover {
+        background-color: #3E2615 !important; /* マウスを乗せると少し暗くなる */
+        border-color: #FFFFFF !important;
+    }
+
+    /* 7. タブのデザイン（下線を焦げ茶色に） */
+    .stTabs [data-baseweb="tab-list"] {
+        border-bottom: 3px solid #5C3A21 !important;
+        background-color: transparent !important;
+    }
+    .stTabs [data-baseweb="tab"] {
+        background-color: transparent !important;
+    }
+    .stTabs [data-baseweb="tab-list"] button [data-testid="stMarkdownContainer"] p {
+        font-size: 18px !important;
+        font-weight: bold !important;
+    }
+
+    /* 8. 数字パネル（Metric）のデザイン */
+    [data-testid="stMetric"] {
+        background-color: #1E2E1F !important;
+        border: 2px solid #5C3A21 !important;
+        padding: 15px !important;
+        border-radius: 10px !important;
+        box-shadow: 2px 2px 5px rgba(0,0,0,0.3) !important;
+    }
+
+    /* 9. アラート（情報パネルなど）の背景を馴染ませる */
+    [data-testid="stAlert"] {
+        background-color: rgba(92, 58, 33, 0.4) !important; /* 焦げ茶色の半透明 */
+        border: 1px solid #5C3A21 !important;
+    }
+    
+    /* 10. データフレーム（表）の背景調整 */
+    [data-testid="stDataFrame"] {
+        background-color: #1E2E1F !important;
+        border: 1px solid #5C3A21 !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -99,18 +164,18 @@ def evaluate_job_with_ai(job_data_dict):
     return response.text
 
 # --- メイン設定 ---
-# 画面上部のタイトルを少しスタイリッシュに
-st.markdown("<h1>✨ 原稿審査＆添削アシスタント</h1>", unsafe_allow_html=True)
+# 画面上部のタイトルを少しスタイリッシュに（アイコンも葉っぱに変更🌿）
+st.markdown("<h1>🌿 原稿審査＆添削アシスタント</h1>", unsafe_allow_html=True)
 st.markdown("---")
 
 LIST_POSSIBLE_ID = '1dGJl6SfeuveynLJ8Q65JDZVymQLMGcyd5ZW5vBD02_8' 
 LIST_PAST_ID = '1aftTvSvKS2yWxHNRNW6rDkrXTsXBw-mWqXViEfsLOMw' 
 
-# サイドバーは「設定」だけにしてスッキリ！
+# サイドバー
 st.sidebar.markdown("### ⚙️ アプリ設定")
 pic_name = st.sidebar.selectbox("👤 スプシ登録用の担当者名", ["小山", "松下", "木村", "福島", "仲本"])
 
-# ★画面上部に「3つのタブ」を作成して、クリックで切り替えられるようにする！
+# ★画面上部の3つのタブ
 tab1, tab2, tab3 = st.tabs(["🔍 1件スピード審査", "🚀 複数一括審査 (最大10件)", "📝 文章比較 ＆ 文字数チェック"])
 
 # ==========================================
@@ -120,12 +185,11 @@ with tab1:
     st.markdown("### 🔍 1件スピード審査")
     st.write("求人IDを入力して、AIによる規定チェックを瞬時に実行します。")
     
-    # 入力欄とボタンを横並びにしてスタイリッシュに
     col_input, col_btn = st.columns([4, 1])
     with col_input:
         search_id = st.text_input("求人IDを入力してください", placeholder="例: 4445", label_visibility="collapsed")
     with col_btn:
-        btn_single = st.button("✨ 判定実行", use_container_width=True, type="primary") # プライマリカラーで目立たせる
+        btn_single = st.button("✨ 判定実行", use_container_width=True, type="primary")
 
     if btn_single and search_id:
         try:
@@ -188,7 +252,6 @@ with tab2:
                     df2 = load_realtime_dataframe(LIST_PAST_ID, "転載確認シート")
 
                 for i, sid in enumerate(search_ids):
-                    # 各結果をカード風に区切って見やすくする
                     st.markdown(f"#### 🎯 {i+1}件目: ID `{sid}`")
                     
                     res1 = df1[df1['求人ID'] == sid]
@@ -240,7 +303,6 @@ with tab3:
             st.markdown("#### 📊 文字数・表記チェック結果")
             matches = list(re.finditer(r'(\d+)\s*/\s*(\d+)', text_b))
             
-            # ダッシュボード風の数字パネル（Metric）でカッコよく！
             col_m1, col_m2, col_m3 = st.columns(3)
             col_m1.metric("全体文字数 (A)", f"{len(text_a)} 文字")
             col_m2.metric("全体文字数 (B)", f"{len(text_b)} 文字")
@@ -280,7 +342,6 @@ with tab3:
 # ★共通：カート機能（登録待ちリスト）
 # ==========================================
 if st.session_state.pending_regs:
-    # 画面の一番下に、固定で表示されるようなデザインにする
     st.markdown("<br><br>", unsafe_allow_html=True)
     st.markdown("---")
     st.markdown("## 🛒 スプシ登録待ちリスト")
