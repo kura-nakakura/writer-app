@@ -255,7 +255,6 @@ elif mode == "文章比較FB":
     st.subheader("📝 文章比較 ＆ ミス・NGワードチェック")
     st.write("元となる文章（A）と、チェックしたい文章（B）を貼り付けてください。")
 
-    # ★変更点1：ラベルの名前を実務に合わせて変更！
     col1, col2 = st.columns(2)
     with col1:
         text_a = st.text_area("【A】circus掲載内容", height=200, placeholder="ここに元の文章を貼り付けます")
@@ -284,24 +283,39 @@ elif mode == "文章比較FB":
             st.warning("AとBの両方に文章を入力してください！")
             st.stop()
 
-        # ★変更点2：Bの文章から「〇/〇」を読み取って自動判定する！
+        # ★アップデート：すべての「〇/〇」を抽出して一括チェック！
         st.markdown("### 📊 文字数チェック")
         
-        import re # 文字のパターンを探すためのツールを呼び出し
+        import re 
         
-        # Bの文章の中から「数字/数字」のパターンを探す（例：21/50, 21 / 50文字 などに柔軟に対応）
-        match = re.search(r'(\d+)\s*/\s*(\d+)', text_b)
+        # Bの文章の中から「数字/数字」のパターンを【すべて】探し出す！
+        matches = list(re.finditer(r'(\d+)\s*/\s*(\d+)', text_b))
         
-        if match:
-            current_len = int(match.group(1)) # 左側の数字（現在の文字数）
-            max_len = int(match.group(2))     # 右側の数字（制限文字数）
+        if matches:
+            over_list = []
+            clear_count = 0
             
-            if current_len <= max_len:
-                st.success(f"✅ 文字数クリア！ （ {current_len} / {max_len}文字 ）")
+            # 見つかったすべての数字をループで1つずつチェック
+            for match in matches:
+                current_len = int(match.group(1)) # 左側の数字（現在の文字数）
+                max_len = int(match.group(2))     # 右側の数字（制限文字数）
+                
+                if current_len <= max_len:
+                    clear_count += 1
+                else:
+                    over_list.append((current_len, max_len))
+            
+            # 結果をまとめて表示
+            if len(over_list) == 0:
+                st.success(f"✨ すべての文字数制限（全{clear_count}箇所）をクリアしています！")
             else:
-                st.error(f"❌ 文字数オーバー！ （ {current_len} / {max_len}文字 ）")
+                st.error(f"❌ {len(over_list)}箇所の文字数オーバーが見つかりました！")
+                for current, maximum in over_list:
+                    st.write(f"・ ⚠️ **{current} / {maximum}文字** （{current - maximum}文字オーバー）")
+                
+                st.info(f"✅ 残りの {clear_count}箇所 はクリアしています。")
+                
         else:
-            # もし「〇/〇文字」の表記が見つからなかった時のための予備
             st.warning("⚠️ Bの文章の中に「〇/〇」の表記が見つかりませんでした。")
             st.info(f"（参考）純粋な入力文字数 - A: {len(text_a)}文字 / B: {len(text_b)}文字")
 
@@ -310,7 +324,6 @@ elif mode == "文章比較FB":
                 genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
                 model = genai.GenerativeModel('gemini-2.5-flash')
                 
-                # ★変更点3：AIへの指示書も「circus」と「Qmate」という名前に変更して精度アップ！
                 prompt = f"""
                 あなたはプロの校正者です。
                 以下の「circus掲載内容（正しいデータ）」と「Qmate掲載内容（チェック対象）」を比較し、厳格にチェックを行ってください。
