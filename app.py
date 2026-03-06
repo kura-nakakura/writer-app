@@ -255,11 +255,12 @@ elif mode == "文章比較FB":
     st.subheader("📝 文章比較 ＆ ミス・NGワードチェック")
     st.write("元となる文章（A）と、チェックしたい文章（B）を貼り付けてください。")
 
+    # ★変更点1：ラベルの名前を実務に合わせて変更！
     col1, col2 = st.columns(2)
     with col1:
-        text_a = st.text_area("【A】元文章（正しいデータ）", height=200, placeholder="ここに元の文章を貼り付けます")
+        text_a = st.text_area("【A】circus掲載内容", height=200, placeholder="ここに元の文章を貼り付けます")
     with col2:
-        text_b = st.text_area("【B】比較文章（チェック対象）", height=200, placeholder="ここに作成した文章を貼り付けます")
+        text_b = st.text_area("【B】Qmate掲載内容", height=200, placeholder="ここに作成した文章を貼り付けます")
 
     try:
         with st.spinner('スプレッドシートから最新のNGワードを読み込み中...'):
@@ -283,29 +284,41 @@ elif mode == "文章比較FB":
             st.warning("AとBの両方に文章を入力してください！")
             st.stop()
 
-        st.markdown("### 📊 文字数カウント")
-        st.info(f"【A】元文章: **{len(text_a)}文字** ／ 【B】比較文章: **{len(text_b)}文字**")
-        diff = len(text_b) - len(text_a)
-        if diff > 0:
-            st.write(f"👉 Bの文章の方が {abs(diff)} 文字 **多い** です。")
-        elif diff < 0:
-            st.write(f"👉 Bの文章の方が {abs(diff)} 文字 **少ない** です。")
+        # ★変更点2：Bの文章から「〇/〇」を読み取って自動判定する！
+        st.markdown("### 📊 文字数チェック")
+        
+        import re # 文字のパターンを探すためのツールを呼び出し
+        
+        # Bの文章の中から「数字/数字」のパターンを探す（例：21/50, 21 / 50文字 などに柔軟に対応）
+        match = re.search(r'(\d+)\s*/\s*(\d+)', text_b)
+        
+        if match:
+            current_len = int(match.group(1)) # 左側の数字（現在の文字数）
+            max_len = int(match.group(2))     # 右側の数字（制限文字数）
+            
+            if current_len <= max_len:
+                st.success(f"✅ 文字数クリア！ （ {current_len} / {max_len}文字 ）")
+            else:
+                st.error(f"❌ 文字数オーバー！ （ {current_len} / {max_len}文字 ）")
         else:
-            st.write("👉 文字数はピッタリ同じです！")
+            # もし「〇/〇文字」の表記が見つからなかった時のための予備
+            st.warning("⚠️ Bの文章の中に「〇/〇」の表記が見つかりませんでした。")
+            st.info(f"（参考）純粋な入力文字数 - A: {len(text_a)}文字 / B: {len(text_b)}文字")
 
         with st.spinner('🤖 AIが違いとNGワードをくまなく探しています...'):
             try:
                 genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
                 model = genai.GenerativeModel('gemini-2.5-flash')
                 
+                # ★変更点3：AIへの指示書も「circus」と「Qmate」という名前に変更して精度アップ！
                 prompt = f"""
                 あなたはプロの校正者です。
-                以下の「元文章（A）」と「比較文章（B）」を比較し、厳格にチェックを行ってください。
+                以下の「circus掲載内容（正しいデータ）」と「Qmate掲載内容（チェック対象）」を比較し、厳格にチェックを行ってください。
 
-                【元文章（A）】
+                【circus掲載内容】
                 {text_a}
 
-                【比較文章（B）】
+                【Qmate掲載内容】
                 {text_b}
 
                 【NGワード（使用禁止ワード）】
@@ -315,11 +328,11 @@ elif mode == "文章比較FB":
                 以下の2点について、見出しをつけて分かりやすくレポートしてください。
 
                 1. 転記ミス・違いの指摘
-                - AとBを比較し、意味が変わっている部分、抜け漏れ、誤字脱字、数字のズレがあれば指摘してください。
+                - 両者を比較し、意味が変わっている部分、抜け漏れ、誤字脱字、数字のズレがあれば指摘してください。
                 - 特に問題がない場合は「✅ 転記ミスや違いは見当たりません」と出力してください。
 
                 2. NGワードチェック
-                - 【比較文章（B）】の中に、【NGワード】に含まれる言葉が入っていないかチェックしてください。
+                - 【Qmate掲載内容】の中に、【NGワード】に含まれる言葉が入っていないかチェックしてください。
                 - もし含まれていた場合、どの部分で使われているかを指摘し、可能であれば言い換えの提案をしてください。
                 - 含まれていない場合は「✅ NGワードは含まれていません」と出力してください。
                 """
@@ -334,6 +347,7 @@ elif mode == "文章比較FB":
 
             except Exception as e:
                 st.error(f"AIチェック中にエラーが発生しました: {e}")
+
 
 
 
