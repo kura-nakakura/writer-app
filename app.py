@@ -233,17 +233,15 @@ elif mode == "文章比較FB":
             # B2セル（結合されていても一番左上のB2を指定すればOK）の値を取得
             ng_raw_text = ws_ng.acell('B2').value
             
-            if ng_raw_text:
+           if ng_raw_text:
                 # 1. 「NGワード：」という最初の文字を消す（全角・半角どちらにも対応）
                 ng_text = ng_raw_text.replace("NGワード：", "").replace("NGワード:", "")
                 
-                # 2. 末尾のひし形マーク「🔶」などを消す
-                ng_text = ng_text.replace("・🔶", "").replace("🔶", "")
+                # 2. 【修正】🔶も立派なNGワードなので、消す処理をなくしました！
                 
                 # 3. 「・」をカンマとスペース「, 」に変換して、AIが分かりやすい形にする
                 default_ng_words = ng_text.replace("・", ", ").strip()
             else:
-                default_ng_words = ""
                 
     except Exception as e:
         # 万が一読み込めなかった時のための予備
@@ -313,3 +311,4 @@ elif mode == "文章比較FB":
 
             except Exception as e:
                 st.error(f"AIチェック中にエラーが発生しました: {e}")
+
