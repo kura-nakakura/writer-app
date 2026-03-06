@@ -8,7 +8,7 @@ import json
 # --- ページ設定 ---
 st.set_page_config(page_title="判定＆添削ツール", layout="wide")
 
-# ★新機能：スプシ登録待ちリスト（カート機能）の準備
+# スプシ登録待ちリスト（カート機能）の準備
 if "pending_regs" not in st.session_state:
     st.session_state.pending_regs = {}
 
@@ -25,9 +25,24 @@ def get_worksheet(sheet_id, sheet_name=None):
     else:
         return sh.get_worksheet(0)
 
+# --- 🌟 爆速化の要：スプシデータを暗記する関数 ---
+# ttl=3600 で「3600秒（1時間）」だけ記憶します。
+@st.cache_data(ttl=3600)
+def load_cached_dataframe(sheet_id, sheet_name=None):
+    ws = get_worksheet(sheet_id, sheet_name)
+    all_data = ws.get_all_values()
+    if len(all_data) < 2:
+        return pd.DataFrame()
+    df = pd.DataFrame(all_data[1:], columns=all_data[0])
+    df.columns = [str(col).strip() for col in df.columns]
+    df = df.loc[:, ~df.columns.duplicated()]
+    df = df.loc[:, df.columns != '']
+    return df
+
 # --- 🤖 Google AI (Gemini) 自動審査関数 ---
 def evaluate_job_with_ai(job_data_dict):
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+    # 500エラーが頻発する場合は 'gemini-1.5-flash' に変更してください
     model = genai.GenerativeModel('gemini-2.5-flash')
     
     prompt = f"""
@@ -63,7 +78,6 @@ LIST_PAST_ID = '1aftTvSvKS2yWxHNRNW6rDkrXTsXBw-mWqXViEfsLOMw'
 
 mode = st.sidebar.selectbox("モード選択", ["1件検索&AI判定", "複数一括判定(最大10件)", "文章比較FB"])
 
-# ★新機能：担当者の選択
 if mode in ["1件検索&AI判定", "複数一括判定(最大10件)"]:
     pic_name = st.sidebar.selectbox("👤 担当者名を選択", ["小山", "松下", "木村", "福島", "仲本"])
 
@@ -77,38 +91,23 @@ if mode == "1件検索&AI判定":
     if st.button("判定実行"):
         if search_id:
             try:
-                with st.spinner('掲載可能リストを確認中...'):
-                    ws1 = get_worksheet(LIST_POSSIBLE_ID)
-                    all_data1 = ws1.get_all_values()
-                    df1 = pd.DataFrame(all_data1[1:], columns=all_data1[0])
-                    df1.columns = [str(col).strip() for col in df1.columns]
-                    df1 = df1.loc[:, ~df1.columns.duplicated()]
-                    df1 = df1.loc[:, df1.columns != '']
+                with st.spinner('スプレッドシートのデータを準備中...（2回目以降は爆速です！）'):
+                    # 🌟 記憶したデータを一瞬で呼び出す
+                    df1 = load_cached_dataframe(LIST_POSSIBLE_ID)
+                    df2 = load_cached_dataframe(LIST_PAST_ID, "転載確認シート")
                     
-                    res1 = df1[df1['求人ID'] == search_id]
+                    if '求人ID' not in df2.columns and not df2.empty:
+                        st.error("❌ マスタ2の1行目に「求人ID」という項目が見つかりません。")
+                        st.stop()
+
+                res1 = df1[df1['求人ID'] == search_id]
 
                 if res1.empty:
                     st.error(f"❌ 判定結果：掲載対象外（リストに存在しません）")
                 else:
                     st.info(f"💡 掲載可能リストに存在します（企業名: {res1.iloc[0]['企業名']}）")
                     
-                    with st.spinner('過去掲載リストと照合中...'):
-                        ws2 = get_worksheet(LIST_PAST_ID, "転載確認シート")
-                        all_data2 = ws2.get_all_values()
-                        
-                        if len(all_data2) < 2:
-                            df2 = pd.DataFrame()
-                        else:
-                            df2 = pd.DataFrame(all_data2[1:], columns=all_data2[0])
-                            df2.columns = [str(col).strip() for col in df2.columns]
-                            df2 = df2.loc[:, ~df2.columns.duplicated()]
-                            df2 = df2.loc[:, df2.columns != '']
-                            
-                            if '求人ID' not in df2.columns:
-                                st.error("❌ マスタ2の1行目に「求人ID」という項目が見つかりません。")
-                                st.stop()
-                                
-                        res2 = pd.DataFrame() if df2.empty else df2[df2['求人ID'] == search_id]
+                    res2 = pd.DataFrame() if df2.empty else df2[df2['求人ID'] == search_id]
 
                     if not res2.empty:
                         st.error("❌ 判定結果：掲載不可（過去掲載リストと重複しています）")
@@ -126,10 +125,8 @@ if mode == "1件検索&AI判定":
                             else:
                                 st.success(ai_result)
                                 
-                                # ★自動登録ではなく、登録待ちリスト（カート）にデータを追加！
                                 company_name = res1.iloc[0].get('企業名', '')
                                 job_name = res1.iloc[0].get('求人名', '')
-                                # A列(0), B列(1), C列(2), D・E・F列(空白), G列(6: 担当者)
                                 st.session_state.pending_regs[search_id] = [search_id, company_name, job_name, "", "", "", pic_name]
                                 st.info("💡 下部の「登録待ちリスト」にストックしました！確認後、手動で登録してください。")
                             
@@ -163,27 +160,14 @@ elif mode == "複数一括判定(最大10件)":
             st.info(f"💡 合計 {len(search_ids)} 件の判定を開始します...")
 
             try:
-                with st.spinner('スプレッドシートの全体データを読み込み中...（通信は1回だけ！）'):
-                    ws1 = get_worksheet(LIST_POSSIBLE_ID)
-                    all_data1 = ws1.get_all_values()
-                    df1 = pd.DataFrame(all_data1[1:], columns=all_data1[0])
-                    df1.columns = [str(col).strip() for col in df1.columns]
-                    df1 = df1.loc[:, ~df1.columns.duplicated()]
-                    df1 = df1.loc[:, df1.columns != '']
+                with st.spinner('スプレッドシートの全体データを準備中...（2回目以降は爆速です！）'):
+                    # 🌟 記憶したデータを一瞬で呼び出す
+                    df1 = load_cached_dataframe(LIST_POSSIBLE_ID)
+                    df2 = load_cached_dataframe(LIST_PAST_ID, "転載確認シート")
                     
-                    ws2 = get_worksheet(LIST_PAST_ID, "転載確認シート")
-                    all_data2 = ws2.get_all_values()
-                    if len(all_data2) < 2:
-                        df2 = pd.DataFrame()
-                    else:
-                        df2 = pd.DataFrame(all_data2[1:], columns=all_data2[0])
-                        df2.columns = [str(col).strip() for col in df2.columns]
-                        df2 = df2.loc[:, ~df2.columns.duplicated()]
-                        df2 = df2.loc[:, df2.columns != '']
-                        
-                        if '求人ID' not in df2.columns:
-                            st.error("❌ マスタ2の1行目に「求人ID」という項目が見つかりません。")
-                            st.stop()
+                    if '求人ID' not in df2.columns and not df2.empty:
+                        st.error("❌ マスタ2の1行目に「求人ID」という項目が見つかりません。")
+                        st.stop()
 
                 for i, search_id in enumerate(search_ids):
                     st.markdown("---") 
@@ -225,7 +209,7 @@ elif mode == "複数一括判定(最大10件)":
                 st.error(f"エラーが発生しました: {e}")
 
 # ==========================================
-# ★新機能：登録待ちリスト表示と手動登録ボタン
+# ★スプシ登録待ちリストと手動登録ボタン
 # ==========================================
 if mode in ["1件検索&AI判定", "複数一括判定(最大10件)"]:
     if st.session_state.pending_regs:
@@ -234,21 +218,23 @@ if mode in ["1件検索&AI判定", "複数一括判定(最大10件)"]:
         st.caption("審査をクリアした求人がここにストックされています。確認後、手動で登録ボタンを押してください！")
         
         for sid, row_data in list(st.session_state.pending_regs.items()):
-            # 枠線をつけて見やすくする
             with st.container():
                 col1, col2 = st.columns([4, 1])
                 with col1:
                     st.markdown(f"🏢 **{row_data[1]}** (ID: `{sid}`) ／ 👤 担当: {row_data[6]}")
                 with col2:
-                    # ここのボタンを押すとスプシに書き込まれます！
                     if st.button("📝 スプシに登録", key=f"reg_{sid}"):
                         try:
                             with st.spinner("登録中..."):
                                 ws2 = get_worksheet(LIST_PAST_ID, "転載確認シート")
                                 ws2.append_row(row_data)
+                                
+                                # 🌟【超重要】新しくデータを登録したので、古い記憶を強制的に消去する！
+                                load_cached_dataframe.clear()
+                                
                             st.success(f"「{row_data[1]}」を登録しました！")
-                            del st.session_state.pending_regs[sid] # 登録が終わったらリストから消す
-                            st.rerun() # 画面をリフレッシュ
+                            del st.session_state.pending_regs[sid]
+                            st.rerun()
                         except Exception as e:
                             st.error(f"エラーが発生しました: {e}")
 
@@ -338,5 +324,6 @@ elif mode == "文章比較FB":
 
             except Exception as e:
                 st.error(f"AIチェック中にエラーが発生しました: {e}")
+
 
 
