@@ -218,28 +218,50 @@ elif mode == "文章比較FB":
     st.subheader("📝 文章比較 ＆ ミス・NGワードチェック")
     st.write("元となる文章（A）と、チェックしたい文章（B）を貼り付けてください。")
 
-    # 画面を左右に分割して入力しやすくする（見た目もスッキリ！）
     col1, col2 = st.columns(2)
-    
     with col1:
         text_a = st.text_area("【A】元文章（正しいデータ）", height=200, placeholder="ここに元の文章を貼り付けます")
-    
     with col2:
         text_b = st.text_area("【B】比較文章（チェック対象）", height=200, placeholder="ここに作成した文章を貼り付けます")
 
-    # NGワードをユーザーが自由に入力・変更できるようにする
-    ng_words_input = st.text_input("🚫 NGワード（カンマ区切りで入力）", value="絶対, 必ず, 日本一, 最高")
+    # --- 🌟 ここがスプシ連携のスーパーパワー！ ---
+    try:
+        with st.spinner('スプレッドシートから最新のNGワードを読み込み中...'):
+            # マスタ2の「転載情報」シートを読み込む
+            ws_ng = get_worksheet(LIST_PAST_ID, "転載情報")
+            
+            # B2セル（結合されていても一番左上のB2を指定すればOK）の値を取得
+            ng_raw_text = ws_ng.acell('B2').value
+            
+            if ng_raw_text:
+                # 1. 「NGワード：」という最初の文字を消す（全角・半角どちらにも対応）
+                ng_text = ng_raw_text.replace("NGワード：", "").replace("NGワード:", "")
+                
+                # 2. 末尾のひし形マーク「🔶」などを消す
+                ng_text = ng_text.replace("・🔶", "").replace("🔶", "")
+                
+                # 3. 「・」をカンマとスペース「, 」に変換して、AIが分かりやすい形にする
+                default_ng_words = ng_text.replace("・", ", ").strip()
+            else:
+                default_ng_words = ""
+                
+    except Exception as e:
+        # 万が一読み込めなかった時のための予備
+        default_ng_words = "絶対, 必ず, 日本一, 最高"
+        st.warning(f"⚠️ NGワードが読み込めなかったため、仮のNGワードを使用します。エラー: {e}")
+
+    # スプシから読み込んだ最新のNGワードが、最初からここに入った状態になります！
+    ng_words_input = st.text_input("🚫 今日のNGワード（スプシから自動読込 / ここで一時的な変更も可能）", value=default_ng_words)
+    # ---------------------------------------------
 
     if st.button("ミスチェック実行"):
         if not text_a or not text_b:
             st.warning("AとBの両方に文章を入力してください！")
             st.stop()
 
-        # 1. まずはPythonによる「文字数カウント」（AIを使わないので一瞬で正確に出ます）
+        # 1. 文字数カウント
         st.markdown("### 📊 文字数カウント")
         st.info(f"【A】元文章: **{len(text_a)}文字** ／ 【B】比較文章: **{len(text_b)}文字**")
-        
-        # 差分（文字数の違い）を計算
         diff = len(text_b) - len(text_a)
         if diff > 0:
             st.write(f"👉 Bの文章の方が {abs(diff)} 文字 **多い** です。")
@@ -248,15 +270,13 @@ elif mode == "文章比較FB":
         else:
             st.write("👉 文字数はピッタリ同じです！")
 
-        # 2. Geminiによる「転記ミス＆NGワードチェック」
+        # 2. GeminiによるAIチェック
         with st.spinner('🤖 AIが違いとNGワードをくまなく探しています...'):
             try:
-                # APIキーの設定（念のためここでも宣言）
                 import google.generativeai as genai
                 genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
                 model = genai.GenerativeModel('gemini-2.5-flash')
                 
-                # AIへの指示書（プロンプト）
                 prompt = f"""
                 あなたはプロの校正者です。
                 以下の「元文章（A）」と「比較文章（B）」を比較し、厳格にチェックを行ってください。
@@ -267,14 +287,14 @@ elif mode == "文章比較FB":
                 【比較文章（B）】
                 {text_b}
 
-                【NGワード】
+                【NGワード（使用禁止ワード）】
                 {ng_words_input}
 
                 【チェック項目と出力形式】
                 以下の2点について、見出しをつけて分かりやすくレポートしてください。
 
                 1. 転記ミス・違いの指摘
-                - AとBを比較し、意味が変わっている部分、抜け漏れ、誤字脱字、数字のズレ（例：金額や日数の間違い）があればすべて指摘してください。
+                - AとBを比較し、意味が変わっている部分、抜け漏れ、誤字脱字、数字のズレがあれば指摘してください。
                 - 特に問題がない場合は「✅ 転記ミスや違いは見当たりません」と出力してください。
 
                 2. NGワードチェック
@@ -283,7 +303,6 @@ elif mode == "文章比較FB":
                 - 含まれていない場合は「✅ NGワードは含まれていません」と出力してください。
                 """
 
-                # AIにリクエスト送信（ブレを防ぐために temperature=0.0）
                 response = model.generate_content(
                     prompt,
                     generation_config=genai.types.GenerationConfig(temperature=0.0)
@@ -294,6 +313,3 @@ elif mode == "文章比較FB":
 
             except Exception as e:
                 st.error(f"AIチェック中にエラーが発生しました: {e}")
-
-
-
