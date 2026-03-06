@@ -211,6 +211,89 @@ elif mode == "複数一括判定(最大10件)":
             except Exception as e:
                 st.error(f"エラーが発生しました: {e}")
 
+# ==========================================
+# モード3：文章比較FB（ミスチェック）
+# ==========================================
+elif mode == "文章比較FB":
+    st.subheader("📝 文章比較 ＆ ミス・NGワードチェック")
+    st.write("元となる文章（A）と、チェックしたい文章（B）を貼り付けてください。")
+
+    # 画面を左右に分割して入力しやすくする（見た目もスッキリ！）
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        text_a = st.text_area("【A】元文章（正しいデータ）", height=200, placeholder="ここに元の文章を貼り付けます")
+    
+    with col2:
+        text_b = st.text_area("【B】比較文章（チェック対象）", height=200, placeholder="ここに作成した文章を貼り付けます")
+
+    # NGワードをユーザーが自由に入力・変更できるようにする
+    ng_words_input = st.text_input("🚫 NGワード（カンマ区切りで入力）", value="絶対, 必ず, 日本一, 最高")
+
+    if st.button("ミスチェック実行"):
+        if not text_a or not text_b:
+            st.warning("AとBの両方に文章を入力してください！")
+            st.stop()
+
+        # 1. まずはPythonによる「文字数カウント」（AIを使わないので一瞬で正確に出ます）
+        st.markdown("### 📊 文字数カウント")
+        st.info(f"【A】元文章: **{len(text_a)}文字** ／ 【B】比較文章: **{len(text_b)}文字**")
+        
+        # 差分（文字数の違い）を計算
+        diff = len(text_b) - len(text_a)
+        if diff > 0:
+            st.write(f"👉 Bの文章の方が {abs(diff)} 文字 **多い** です。")
+        elif diff < 0:
+            st.write(f"👉 Bの文章の方が {abs(diff)} 文字 **少ない** です。")
+        else:
+            st.write("👉 文字数はピッタリ同じです！")
+
+        # 2. Geminiによる「転記ミス＆NGワードチェック」
+        with st.spinner('🤖 AIが違いとNGワードをくまなく探しています...'):
+            try:
+                # APIキーの設定（念のためここでも宣言）
+                import google.generativeai as genai
+                genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+                model = genai.GenerativeModel('gemini-2.5-flash')
+                
+                # AIへの指示書（プロンプト）
+                prompt = f"""
+                あなたはプロの校正者です。
+                以下の「元文章（A）」と「比較文章（B）」を比較し、厳格にチェックを行ってください。
+
+                【元文章（A）】
+                {text_a}
+
+                【比較文章（B）】
+                {text_b}
+
+                【NGワード】
+                {ng_words_input}
+
+                【チェック項目と出力形式】
+                以下の2点について、見出しをつけて分かりやすくレポートしてください。
+
+                1. 転記ミス・違いの指摘
+                - AとBを比較し、意味が変わっている部分、抜け漏れ、誤字脱字、数字のズレ（例：金額や日数の間違い）があればすべて指摘してください。
+                - 特に問題がない場合は「✅ 転記ミスや違いは見当たりません」と出力してください。
+
+                2. NGワードチェック
+                - 【比較文章（B）】の中に、【NGワード】に含まれる言葉が入っていないかチェックしてください。
+                - もし含まれていた場合、どの部分で使われているかを指摘し、可能であれば言い換えの提案をしてください。
+                - 含まれていない場合は「✅ NGワードは含まれていません」と出力してください。
+                """
+
+                # AIにリクエスト送信（ブレを防ぐために temperature=0.0）
+                response = model.generate_content(
+                    prompt,
+                    generation_config=genai.types.GenerationConfig(temperature=0.0)
+                )
+                
+                st.markdown("### 🤖 AI校正レポート")
+                st.write(response.text)
+
+            except Exception as e:
+                st.error(f"AIチェック中にエラーが発生しました: {e}")
 
 
 
