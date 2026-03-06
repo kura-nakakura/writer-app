@@ -55,28 +55,30 @@ def evaluate_job_with_ai(job_data_dict):
     return response.text
 
 # --- メイン設定 ---
+# --- メイン設定 ---
 st.title("🚀 業務効率化アプリ")
 
 LIST_POSSIBLE_ID = '1dGJl6SfeuveynLJ8Q65JDZVymQLMGcyd5ZW5vBD02_8' 
 LIST_PAST_ID = '1aftTvSvKS2yWxHNRNW6rDkrXTsXBw-mWqXViEfsLOMw' 
 
-mode = st.sidebar.selectbox("モード選択", ["求人検索&AI判定", "文章比較FB"])
+# ★モードを3種類に増やしました！
+mode = st.sidebar.selectbox("モード選択", ["1件検索&AI判定", "複数一括判定(最大10件)", "文章比較FB"])
 
-if mode == "求人検索&AI判定":
-    st.subheader("🔍 求人ID 掲載判定 ＆ AI自動審査")
+# ==========================================
+# モード1：従来の1件ずつ丁寧に見るモード
+# ==========================================
+if mode == "1件検索&AI判定":
+    st.subheader("🔍 求人ID 1件判定 ＆ AI自動審査")
     search_id = st.text_input("検索したい「求人ID」を入力", placeholder="例: 4445")
     
     if st.button("判定実行"):
         if search_id:
             try:
-                # STEP 1: 掲載可能リスト
                 with st.spinner('掲載可能リストを確認中...'):
                     ws1 = get_worksheet(LIST_POSSIBLE_ID)
                     all_data1 = ws1.get_all_values()
                     df1 = pd.DataFrame(all_data1[1:], columns=all_data1[0])
-                    # 列名の前後の空白を消す
                     df1.columns = [str(col).strip() for col in df1.columns]
-                    # ★エラー対策：重複している列名や、名前が空っぽの列を無視する！
                     df1 = df1.loc[:, ~df1.columns.duplicated()]
                     df1 = df1.loc[:, df1.columns != '']
                     
@@ -87,34 +89,30 @@ if mode == "求人検索&AI判定":
                 else:
                     st.info(f"💡 掲載可能リストに存在します（企業名: {res1.iloc[0]['企業名']}）")
                     
-                    # STEP 2: 過去掲載リスト（転載確認シート）
                     with st.spinner('過去掲載リストと照合中...'):
                         ws2 = get_worksheet(LIST_PAST_ID, "転載確認シート")
                         all_data2 = ws2.get_all_values()
                         
                         if len(all_data2) < 2:
-                            res2 = pd.DataFrame()
+                            df2 = pd.DataFrame()
                         else:
                             df2 = pd.DataFrame(all_data2[1:], columns=all_data2[0])
                             df2.columns = [str(col).strip() for col in df2.columns]
-                            # ★エラー対策：重複している列名や、名前が空っぽの列を無視する！
                             df2 = df2.loc[:, ~df2.columns.duplicated()]
                             df2 = df2.loc[:, df2.columns != '']
                             
                             if '求人ID' not in df2.columns:
-                                st.error("❌ マスタ2（転載確認シート）の1行目に「求人ID」という項目が見つかりません。")
+                                st.error("❌ マスタ2の1行目に「求人ID」という項目が見つかりません。")
                                 st.stop()
                                 
-                            res2 = df2[df2['求人ID'] == search_id]
+                        res2 = pd.DataFrame() if df2.empty else df2[df2['求人ID'] == search_id]
 
                     if not res2.empty:
                         st.error("❌ 判定結果：掲載不可（過去掲載リストと重複しています）")
-                        # ★大正解の変更：マスタ2(res2)ではなく、マスタ1(res1)の詳しいデータを表示する！
                         st.dataframe(res1)
                     else:
                         st.success("✅ スプシ判定クリア！続けてAI審査を行います...")
                         
-                        # STEP 3: AI審査
                         with st.spinner('🤖 AIが規定をチェックしています...'):
                             job_data_dict = res1.iloc[0].to_dict()
                             ai_result = evaluate_job_with_ai(job_data_dict)
@@ -130,6 +128,89 @@ if mode == "求人検索&AI判定":
 
             except Exception as e:
                 st.error(f"エラーが発生しました: {e}")
+
+# ==========================================
+# モード2：新搭載の複数一括モード
+# ==========================================
+elif mode == "複数一括判定(最大10件)":
+    st.subheader("🔍 求人ID 複数一括判定 ＆ AI自動審査 (最大10件)")
+    search_ids_input = st.text_area(
+        "検索したい「求人ID」を入力（改行して複数入力できます）", 
+        placeholder="例:\n4445\n4446\n4447",
+        height=150
+    )
+    
+    if st.button("一括判定実行"):
+        if search_ids_input:
+            raw_ids = search_ids_input.replace(',', '\n').split('\n')
+            search_ids = [sid.strip() for sid in raw_ids if sid.strip()]
+            search_ids = list(dict.fromkeys(search_ids))[:10]
+            
+            if not search_ids:
+                st.warning("有効な求人IDが入力されていません。")
+                st.stop()
+                
+            st.info(f"💡 合計 {len(search_ids)} 件の判定を開始します...")
+
+            try:
+                # 3万件あっても、ここで「1回だけ」一気に読み込みます！
+                with st.spinner('スプレッドシートの全体データを読み込み中...（通信は1回だけ！）'):
+                    ws1 = get_worksheet(LIST_POSSIBLE_ID)
+                    all_data1 = ws1.get_all_values()
+                    df1 = pd.DataFrame(all_data1[1:], columns=all_data1[0])
+                    df1.columns = [str(col).strip() for col in df1.columns]
+                    df1 = df1.loc[:, ~df1.columns.duplicated()]
+                    df1 = df1.loc[:, df1.columns != '']
+                    
+                    ws2 = get_worksheet(LIST_PAST_ID, "転載確認シート")
+                    all_data2 = ws2.get_all_values()
+                    if len(all_data2) < 2:
+                        df2 = pd.DataFrame()
+                    else:
+                        df2 = pd.DataFrame(all_data2[1:], columns=all_data2[0])
+                        df2.columns = [str(col).strip() for col in df2.columns]
+                        df2 = df2.loc[:, ~df2.columns.duplicated()]
+                        df2 = df2.loc[:, df2.columns != '']
+                        
+                        if '求人ID' not in df2.columns:
+                            st.error("❌ マスタ2の1行目に「求人ID」という項目が見つかりません。")
+                            st.stop()
+
+                # 読み込んだデータの中から、10件分を一瞬で探し出します
+                for i, search_id in enumerate(search_ids):
+                    st.markdown("---") 
+                    st.markdown(f"### 🎯 {i+1}件目: 求人ID `{search_id}`")
+                    
+                    res1 = df1[df1['求人ID'] == search_id]
+                    
+                    if res1.empty:
+                        st.error("❌ 判定結果：掲載対象外（マスタ1に存在しません）")
+                    else:
+                        st.info(f"💡 掲載可能リストに存在します（企業名: {res1.iloc[0]['企業名']}）")
+                        
+                        res2 = pd.DataFrame() if df2.empty else df2[df2['求人ID'] == search_id]
+
+                        if not res2.empty:
+                            st.error("❌ 判定結果：掲載不可（過去掲載リストと重複しています）")
+                            st.dataframe(res1)
+                        else:
+                            st.success("✅ スプシ判定クリア！続けてAI審査を行います...")
+                            
+                            with st.spinner(f'🤖 ID:{search_id} をAIがチェックしています...'):
+                                job_data_dict = res1.iloc[0].to_dict()
+                                ai_result = evaluate_job_with_ai(job_data_dict)
+                                
+                                if "❌" in ai_result:
+                                    st.error(ai_result)
+                                else:
+                                    st.success(ai_result)
+                                
+                                with st.expander("▼ 審査に使用したデータ（クリックで開く）"):
+                                    st.dataframe(res1)
+
+            except Exception as e:
+                st.error(f"エラーが発生しました: {e}")
+
 
 
 
