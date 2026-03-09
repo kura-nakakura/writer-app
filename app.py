@@ -69,7 +69,7 @@ def custom_spinner(text="処理中..."):
     finally:
         placeholder.empty() 
 
-# --- 状態管理（入力欄クリア機能のための変数を追加） ---
+# --- 状態管理 ---
 if "pending_regs" not in st.session_state: st.session_state.pending_regs = {}
 if "multi_id_input" not in st.session_state: st.session_state.multi_id_input = ""
 if "text_a_input" not in st.session_state: st.session_state.text_a_input = ""
@@ -120,7 +120,7 @@ def get_min_wage(sheet_id):
     except Exception:
         return "（最低賃金データが取得できませんでした）"
 
-# --- 🤖 AI審査関数（★NGワード判定を削除し、役割分担を戻しました） ---
+# --- 🤖 AI審査関数 ---
 def evaluate_job_with_ai(job_data_dict, min_wage_text):
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
     model = genai.GenerativeModel('gemini-2.5-flash')
@@ -222,16 +222,20 @@ with tab1:
                         
                         st.markdown("#### 🤖 AI審査レポート")
                         
+                        # ★アップデート：「⚠️ 要確認」の場合でもカートにストックするように修正！
                         if "❌" in ai_result:
                             st.error(ai_result)
-                        elif "⚠️" in ai_result:
-                            st.warning(ai_result) 
                         else:
-                            st.success(ai_result) 
+                            if "⚠️" in ai_result:
+                                st.warning(ai_result) 
+                                st.info("💡 審査は「要確認」ですが、画面最下部の「カート」にストックしました。内容を確認後、スプシに登録してください。")
+                            else:
+                                st.success(ai_result) 
+                                st.info("💡 審査を完全にクリアしました！画面最下部の「カート」にストックしました。")
+                                
                             company_name = res1.iloc[0].get('企業名', '')
                             job_name = res1.iloc[0].get('求人名', '')
                             st.session_state.pending_regs[search_id] = [search_id, company_name, job_name, "", "", "", pic_name]
-                            st.info("💡 審査を完全にクリアしました！画面最下部の「カート」にストックしました。")
                         
                         with st.expander("▼ 審査に使用した元データを確認する"):
                             st.dataframe(res1, use_container_width=True)
@@ -278,12 +282,15 @@ with tab2:
                                 min_wage_data = get_min_wage(LIST_POSSIBLE_ID)
                                 ai_result = evaluate_job_with_ai(res1.iloc[0].to_dict(), min_wage_data)
                                 
+                                # ★一括モードでも「⚠️ 要確認」をカートにストックするように修正！
                                 if "❌" in ai_result:
                                     st.error(ai_result)
-                                elif "⚠️" in ai_result:
-                                    st.warning(ai_result)
                                 else:
-                                    st.success(ai_result)
+                                    if "⚠️" in ai_result:
+                                        st.warning(ai_result)
+                                    else:
+                                        st.success(ai_result)
+                                        
                                     company_name = res1.iloc[0].get('企業名', '')
                                     job_name = res1.iloc[0].get('求人名', '')
                                     st.session_state.pending_regs[sid] = [sid, company_name, job_name, "", "", "", pic_name]
