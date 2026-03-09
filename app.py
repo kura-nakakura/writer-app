@@ -24,14 +24,27 @@ st.markdown("""
     .stSelectbox div[data-baseweb="select"] > div {
         background-color: #FFFFFF !important; border: 1px solid #D0D7E1 !important; border-radius: 12px !important;
     }
-    .stButton > button {
+    
+    /* ★ボタンのCSSをアップデート：「メインボタン」と「クリアボタン」でデザインを分ける！ */
+    /* メインボタン（青色） */
+    button[data-testid="baseButton-primary"] {
         background-color: #7A9EBA !important; color: #FFFFFF !important;
         border: none !important; border-radius: 12px !important; font-weight: bold !important;
         box-shadow: 0 4px 10px rgba(122, 158, 186, 0.3) !important; transition: all 0.3s ease;
     }
-    .stButton > button:hover {
+    button[data-testid="baseButton-primary"]:hover {
         background-color: #6385A1 !important; transform: translateY(-2px) !important;
     }
+    /* サブボタン（クリア用の白ボタン） */
+    button[data-testid="baseButton-secondary"] {
+        background-color: #FFFFFF !important; color: #7A9EBA !important;
+        border: 1px solid #D0D7E1 !important; border-radius: 12px !important; font-weight: bold !important;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.02) !important; transition: all 0.3s ease;
+    }
+    button[data-testid="baseButton-secondary"]:hover {
+        background-color: #F5F7FA !important; border-color: #7A9EBA !important; transform: translateY(-2px) !important;
+    }
+
     div[data-baseweb="tab-highlight"] { background-color: #7A9EBA !important; }
     .stTabs [data-baseweb="tab-list"] { border-bottom: 2px solid #E2E8F0 !important; background-color: transparent !important; }
     .stTabs [data-baseweb="tab"] { background-color: transparent !important; }
@@ -58,9 +71,19 @@ def custom_spinner(text="処理中..."):
     finally:
         placeholder.empty() 
 
-# --- 状態管理 ---
-if "pending_regs" not in st.session_state:
-    st.session_state.pending_regs = {}
+# --- 状態管理（★新機能：テキスト入力欄を空にするための準備） ---
+if "pending_regs" not in st.session_state: st.session_state.pending_regs = {}
+if "multi_id_input" not in st.session_state: st.session_state.multi_id_input = ""
+if "text_a_input" not in st.session_state: st.session_state.text_a_input = ""
+if "text_b_input" not in st.session_state: st.session_state.text_b_input = ""
+
+# 入力欄クリア用関数
+def clear_multi(): st.session_state.multi_id_input = ""
+def clear_text_a(): st.session_state.text_a_input = ""
+def clear_text_b(): st.session_state.text_b_input = ""
+def clear_both():
+    st.session_state.text_a_input = ""
+    st.session_state.text_b_input = ""
 
 # --- Googleスプシ接続 ＆ 読み込み関数 ---
 @st.cache_resource
@@ -196,8 +219,14 @@ with tab1:
 # タブ2：複数一括審査モード
 # ==========================================
 with tab2:
-    st.markdown("### ☁️ 複数一括審査")
-    search_ids_input = st.text_area("求人IDを入力（改行で複数入力可）", placeholder="4445\n4446\n4447", height=120)
+    # ★新機能：一括審査タブのクリアボタン！
+    col_title, col_clear = st.columns([4, 1])
+    with col_title:
+        st.markdown("### ☁️ 複数一括審査")
+    with col_clear:
+        st.button("🗑️ 入力欄を空にする", on_click=clear_multi, use_container_width=True)
+        
+    search_ids_input = st.text_area("求人IDを入力（改行で複数入力可）", placeholder="4445\n4446\n4447", height=120, key="multi_id_input")
     btn_multi = st.button("✨ 一括判定スタート", type="primary")
     
     if btn_multi and search_ids_input:
@@ -242,11 +271,20 @@ with tab2:
 with tab3:
     st.markdown("### 🫧 文章比較 ＆ 文字数・NGワードチェック")
     
+    # ★新機能：文章比較タブのクリアボタンを3つ配置！
+    col_btn_a, col_btn_b, col_btn_both = st.columns([1, 1, 1.5])
+    with col_btn_a:
+        st.button("🗑️ 【A】を空にする", on_click=clear_text_a, use_container_width=True)
+    with col_btn_b:
+        st.button("🗑️ 【B】を空にする", on_click=clear_text_b, use_container_width=True)
+    with col_btn_both:
+        st.button("🗑️ AとBを両方空にする", on_click=clear_both, use_container_width=True)
+        
     col_a, col_b = st.columns(2)
     with col_a:
-        text_a = st.text_area("📄 【A】circus掲載内容 (元データ)", height=250)
+        text_a = st.text_area("📄 【A】circus掲載内容 (元データ)", height=250, key="text_a_input")
     with col_b:
-        text_b = st.text_area("✍️ 【B】Qmate掲載内容 (チェック対象)", height=250)
+        text_b = st.text_area("✍️ 【B】Qmate掲載内容 (チェック対象)", height=250, key="text_b_input")
 
     try:
         ws_ng = get_worksheet(LIST_PAST_ID, "転載情報")
@@ -306,8 +344,6 @@ with tab3:
             with custom_spinner('🪄 AIがくまなく探しています...'):
                 genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
                 model = genai.GenerativeModel('gemini-2.5-flash')
-                
-                # ★修正ポイント：AIが「株式会社ライフアップ」を自社名だと理解し、本当の企業名を探すように指示！
                 prompt = f"""
                 あなたはプロの校正者です。
                 以下の「circus掲載内容（元データ）」と「Qmate掲載内容（作成原稿）」を比較し、厳格にチェックを行ってください。
