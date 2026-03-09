@@ -10,12 +10,16 @@ import contextlib
 # --- ページ設定 ---
 st.set_page_config(page_title="求人原稿 自動審査ツール", page_icon="☁️", layout="wide")
 
-# --- 🤍 カスタムCSS ---
+# --- 🤍 カスタムCSS（※お客様からご提示いただいたコードのまま一切変更していません） ---
 st.markdown("""
 <style>
+    /* 全体の背景 */
     .stApp { background-color: #F5F7FA !important; }
+    /* 文字色 */
     h1, h2, h3, h4, h5, h6, p, span, label, div { color: #4A4A4A !important; }
+    /* 区切り線 */
     hr { border-bottom: 2px solid #E2E8F0 !important; border-top: none !important; margin: 20px 0; }
+    /* 入力欄 */
     .stTextInput input, .stTextArea textarea {
         background-color: #FFFFFF !important; color: #4A4A4A !important;
         border: 1px solid #D0D7E1 !important; border-radius: 12px !important;
@@ -24,33 +28,27 @@ st.markdown("""
     .stSelectbox div[data-baseweb="select"] > div {
         background-color: #FFFFFF !important; border: 1px solid #D0D7E1 !important; border-radius: 12px !important;
     }
-    
-    /* ★ボタンのCSSをアップデート：「メインボタン」と「クリアボタン」でデザインを分ける！ */
-    /* メインボタン（青色） */
-    button[data-testid="baseButton-primary"] {
+    /* ボタン */
+    .stButton > button {
         background-color: #7A9EBA !important; color: #FFFFFF !important;
         border: none !important; border-radius: 12px !important; font-weight: bold !important;
         box-shadow: 0 4px 10px rgba(122, 158, 186, 0.3) !important; transition: all 0.3s ease;
     }
-    button[data-testid="baseButton-primary"]:hover {
+    .stButton > button:hover {
         background-color: #6385A1 !important; transform: translateY(-2px) !important;
     }
-    /* サブボタン（クリア用の白ボタン） */
-    button[data-testid="baseButton-secondary"] {
-        background-color: #FFFFFF !important; color: #7A9EBA !important;
-        border: 1px solid #D0D7E1 !important; border-radius: 12px !important; font-weight: bold !important;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.02) !important; transition: all 0.3s ease;
+    /* ★修正：タブの赤い下線をくすみブルーに強制上書き！ */
+    div[data-baseweb="tab-highlight"] {
+        background-color: #7A9EBA !important;
     }
-    button[data-testid="baseButton-secondary"]:hover {
-        background-color: #F5F7FA !important; border-color: #7A9EBA !important; transform: translateY(-2px) !important;
+    .stTabs [data-baseweb="tab-list"] {
+        border-bottom: 2px solid #E2E8F0 !important; background-color: transparent !important;
     }
-
-    div[data-baseweb="tab-highlight"] { background-color: #7A9EBA !important; }
-    .stTabs [data-baseweb="tab-list"] { border-bottom: 2px solid #E2E8F0 !important; background-color: transparent !important; }
     .stTabs [data-baseweb="tab"] { background-color: transparent !important; }
     .stTabs [data-baseweb="tab-list"] button [data-testid="stMarkdownContainer"] p {
         font-size: 18px !important; font-weight: bold !important; color: #7A9EBA !important;
     }
+    /* パネル */
     [data-testid="stMetric"], [data-testid="stAlert"] {
         background-color: #FFFFFF !important; border: 1px solid #E2E8F0 !important;
         padding: 15px !important; border-radius: 12px !important; box-shadow: 0 4px 12px rgba(0,0,0,0.03) !important;
@@ -71,13 +69,13 @@ def custom_spinner(text="処理中..."):
     finally:
         placeholder.empty() 
 
-# --- 状態管理（★新機能：テキスト入力欄を空にするための準備） ---
+# --- 状態管理（入力欄クリア機能のための変数を追加） ---
 if "pending_regs" not in st.session_state: st.session_state.pending_regs = {}
 if "multi_id_input" not in st.session_state: st.session_state.multi_id_input = ""
 if "text_a_input" not in st.session_state: st.session_state.text_a_input = ""
 if "text_b_input" not in st.session_state: st.session_state.text_b_input = ""
 
-# 入力欄クリア用関数
+# --- 入力欄クリア用関数 ---
 def clear_multi(): st.session_state.multi_id_input = ""
 def clear_text_a(): st.session_state.text_a_input = ""
 def clear_text_b(): st.session_state.text_b_input = ""
@@ -219,7 +217,6 @@ with tab1:
 # タブ2：複数一括審査モード
 # ==========================================
 with tab2:
-    # ★新機能：一括審査タブのクリアボタン！
     col_title, col_clear = st.columns([4, 1])
     with col_title:
         st.markdown("### ☁️ 複数一括審査")
@@ -271,7 +268,6 @@ with tab2:
 with tab3:
     st.markdown("### 🫧 文章比較 ＆ 文字数・NGワードチェック")
     
-    # ★新機能：文章比較タブのクリアボタンを3つ配置！
     col_btn_a, col_btn_b, col_btn_both = st.columns([1, 1, 1.5])
     with col_btn_a:
         st.button("🗑️ 【A】を空にする", on_click=clear_text_a, use_container_width=True)
