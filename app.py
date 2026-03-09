@@ -109,7 +109,7 @@ def load_realtime_dataframe(sheet_id, sheet_name=None):
     df = df.loc[:, ~df.columns.duplicated()]
     return df.loc[:, df.columns != '']
 
-# --- 🤖 AI審査関数（★機能アップデート：PDFの内容に準拠） ---
+# --- 🤖 AI審査関数 ---
 def evaluate_job_with_ai(job_data_dict):
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
     model = genai.GenerativeModel('gemini-2.5-flash')
@@ -143,7 +143,6 @@ LIST_PAST_ID = '1aftTvSvKS2yWxHNRNW6rDkrXTsXBw-mWqXViEfsLOMw'
 st.sidebar.markdown("### ⚙️ アプリ設定")
 pic_name = st.sidebar.selectbox("👤 スプシ登録用の担当者名", ["小山", "松下", "木村", "福島", "仲本"])
 
-# ★絵文字を「淡色系」に変更！
 tab1, tab2, tab3 = st.tabs(["🤍 1件スピード審査", "☁️ 複数一括審査 (最大10件)", "🫧 文章比較 ＆ 文字数チェック"])
 
 # ==========================================
@@ -238,7 +237,7 @@ with tab2:
                 st.error(f"エラーが発生しました: {e}")
 
 # ==========================================
-# タブ3：文章比較FBモード（★機能アップデート）
+# タブ3：文章比較FBモード
 # ==========================================
 with tab3:
     st.markdown("### 🫧 文章比較 ＆ 文字数・NGワードチェック")
@@ -249,9 +248,14 @@ with tab3:
     with col_b:
         text_b = st.text_area("✍️ 【B】Qmate掲載内容 (チェック対象)", height=250)
 
-    # ★機能アップデート：PDFの内容に合わせてNGワードを「タイトル」と「全体」に分割！
-    default_title_ng = "です, ます, ませんか, がっつり, 年収, 収入, OK, 手当, 祝金, 歓迎, 月収, 見舞金,🔶"
-    default_body_ng = "祝金, 見舞金, ボーナス,🔶"
+    try:
+        ws_ng = get_worksheet(LIST_PAST_ID, "転載情報")
+        ng_raw = ws_ng.acell('B2').value
+        default_title_ng = ng_raw.replace("\n", "").replace("NGワード：", "").replace("NGワード:", "").replace("・", ", ").strip() if ng_raw else ""
+    except:
+        default_title_ng = "です, ます, ませんか, がっつり, 年収, 収入, OK, 手当, 祝金, 歓迎, 月収, 見舞金, 🔶"
+        
+    default_body_ng = "祝金, 見舞金, ボーナス, 🔶"
     
     st.markdown("##### 🚫 NGワード設定")
     col_ng1, col_ng2 = st.columns(2)
@@ -264,7 +268,6 @@ with tab3:
         if not text_a or not text_b:
             st.warning("AとBの両方に文章を入力してください！")
         else:
-            # ★機能アップデート：文字数オーバー時の「前後の文脈」を抽出する機能
             st.markdown("#### 📊 文字数・表記チェック結果")
             
             lines = text_b.split('\n')
@@ -283,7 +286,6 @@ with tab3:
                 for match in matches:
                     curr, m_max = int(match.group(1)), int(match.group(2))
                     if curr > m_max:
-                        # 前後の行を取得して表示文を作る
                         prev_line = lines[i-1] if i > 0 else ""
                         next_line = lines[i+1] if i < len(lines)-1 else ""
                         context = f"{prev_line}\n**{line}**\n{next_line}".strip()
@@ -300,11 +302,12 @@ with tab3:
                         with st.expander(f"⚠️ {curr} / {m_max}文字 （{curr - m_max}文字オーバー） - 前後の文章を見る", expanded=True):
                             st.markdown(context)
             
-            # ★機能アップデート：AI指示書に「意味重視の比較」と「分割NGワード判定」を追加！
             st.markdown("#### 🤖 AI 転記ミス・NGワードレポート")
             with custom_spinner('🪄 AIがくまなく探しています...'):
                 genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
                 model = genai.GenerativeModel('gemini-2.5-flash')
+                
+                # ★修正箇所：AIへのプロンプトで「完全一致のみ」を強烈に指示しました！
                 prompt = f"""
                 あなたはプロの校正者です。
                 以下の「circus掲載内容（元データ）」と「Qmate掲載内容（作成原稿）」を比較し、厳格にチェックを行ってください。
@@ -317,12 +320,14 @@ with tab3:
                 - ただし、条件の数字の転記ミス、重要な条件の抜け漏れがあれば、「どこがどう間違っているか」を指摘してください。
                 - 特にミスがなければ「✅ 転記ミスや条件の抜け漏れはありません」と出力してください。
 
-                【チェック項目2：NGワード判定】
-                以下のルールに従い、Qmate掲載内容の中にNGワードがないかチェックしてください。
+                【チェック項目2：NGワード判定（※完全一致のみ！）】
+                以下のルールに従い、Qmate掲載内容の中に「指定されたNGワードそのもの（完全一致）」が含まれていないかチェックしてください。
+                ⚠️超重要：AIの独自の判断で「意味が似ている言葉（類語）」や「代替表現（例：手当→あり等）」をNGワードとして拡大解釈・誤検知することは絶対にやめてください。リストにある文字列と一言一句同じ場合のみ指摘してください。
+
                 - タイトル判定用NGワード: {ng_title_input} （※Qmate掲載内容の中で「職種名」や「タイトル」と思われる部分のみをチェック）
                 - 求人全体判定用NGワード: {ng_body_input} （※Qmate掲載内容のすべての文章をチェック）
-                - 見つかった場合は「〇〇という言葉がNGワードに該当します。〇〇と言い換えてください」と具体的な修正案を提示してください。
-                - なければ「✅ NGワードは含まれていません」と出力してください。
+                - 【完全一致】で見つかった場合は「〇〇という言葉がNGワードに該当します。〇〇と言い換えてください」と具体的な修正案を提示してください。
+                - 見つからない場合は「✅ NGワードは含まれていません」と出力してください。
                 """
                 response = model.generate_content(prompt, generation_config=genai.types.GenerationConfig(temperature=0.0))
                 st.write(response.text)
