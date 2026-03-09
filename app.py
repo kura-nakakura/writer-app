@@ -69,7 +69,7 @@ def custom_spinner(text="処理中..."):
     finally:
         placeholder.empty() 
 
-# --- 状態管理 ---
+# --- 状態管理（入力欄クリア機能のための変数を追加） ---
 if "pending_regs" not in st.session_state: st.session_state.pending_regs = {}
 if "multi_id_input" not in st.session_state: st.session_state.multi_id_input = ""
 if "text_a_input" not in st.session_state: st.session_state.text_a_input = ""
@@ -120,7 +120,7 @@ def get_min_wage(sheet_id):
     except Exception:
         return "（最低賃金データが取得できませんでした）"
 
-# --- 🤖 AI審査関数（★ユーザー様の素晴らしいプロンプトに更新） ---
+# --- 🤖 AI審査関数（★NGワード判定を削除し、役割分担を戻しました） ---
 def evaluate_job_with_ai(job_data_dict, min_wage_text):
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
     model = genai.GenerativeModel('gemini-2.5-flash')
@@ -159,10 +159,8 @@ def evaluate_job_with_ai(job_data_dict, min_wage_text):
     4. 労働時間に関する事項
     - 【法定労働時間】：「労働時間が8.5時間」など法定の8時間を超えている記載がある場合は「⚠️ 要確認：法定労働時間の8時間を超えている点の確認が必要です」とする。
 
-    5. その他の記載不備・NGワード
+    5. その他の記載不備
     - 【矛盾検知】：タイトルと勤務地に矛盾がある場合は「⚠️ 要確認」とする。
-    - 【タイトルNGワード】：タイトルに「です・ます・年収・OK」等の禁止語がある場合は「⚠️ 要確認：タイトルを変更すれば掲載可能です」とする。
-    - 【媒体NGワード】：人材紹介求人で「祝金・ボーナス」等の記載がある場合は「⚠️ 要確認：記載の仕方を変更（または削除）すれば掲載可能です」とする。
 
     ■ ステップ3：出力フォーマット
     結果を以下の構成で、見やすくマークダウン形式で出力してください。JSON形式はアプリ上でコードとして表示されてしまうため絶対に使用しないでください。
@@ -173,9 +171,6 @@ def evaluate_job_with_ai(job_data_dict, min_wage_text):
     （※問題がない場合は「✅ 規定違反や確認が必要な項目はありません」と出力）
     - **[⚠️ 要確認 または ❌ 掲載不可] 該当項目名**
       具体的な理由とボーダーライン（例：年間休日日数が不明です。現在の月給20万円・1日8時間労働の場合、年間休日が【112日未満】だと愛知県の最低賃金を下回るためアウトになります。【112日以上】であればクリアです。日数を追記してください。）
-
-    #### タイトル修正案
-    （※タイトルNGワードに該当した場合のみ、NGワードを除外した適切なタイトル案を出力。該当なしの場合は省略）
     """
     response = model.generate_content(prompt, generation_config=genai.types.GenerationConfig(temperature=0.0))
     return response.text
@@ -227,13 +222,12 @@ with tab1:
                         
                         st.markdown("#### 🤖 AI審査レポート")
                         
-                        # ★アップデート：新しい「⚠️ 要確認」ステータスの画面表示に対応しました！
                         if "❌" in ai_result:
                             st.error(ai_result)
                         elif "⚠️" in ai_result:
-                            st.warning(ai_result) # 黄色いアラートで表示！カートには入れません
+                            st.warning(ai_result) 
                         else:
-                            st.success(ai_result) # 完全クリアの時だけ緑色＆カートに入れる！
+                            st.success(ai_result) 
                             company_name = res1.iloc[0].get('企業名', '')
                             job_name = res1.iloc[0].get('求人名', '')
                             st.session_state.pending_regs[search_id] = [search_id, company_name, job_name, "", "", "", pic_name]
@@ -284,7 +278,6 @@ with tab2:
                                 min_wage_data = get_min_wage(LIST_POSSIBLE_ID)
                                 ai_result = evaluate_job_with_ai(res1.iloc[0].to_dict(), min_wage_data)
                                 
-                                # ★アップデート：複数モードでも「⚠️ 要確認」の色分けに対応！
                                 if "❌" in ai_result:
                                     st.error(ai_result)
                                 elif "⚠️" in ai_result:
@@ -426,16 +419,3 @@ if st.session_state.pending_regs:
                         st.rerun()
                     except Exception as e:
                         st.error(f"登録エラー: {e}")
-
-
-
-
-
-
-
-
-
-
-
-
-
