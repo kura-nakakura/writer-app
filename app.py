@@ -250,8 +250,8 @@ with tab3:
         text_b = st.text_area("✍️ 【B】Qmate掲載内容 (チェック対象)", height=250)
 
     # ★機能アップデート：PDFの内容に合わせてNGワードを「タイトル」と「全体」に分割！
-    default_title_ng = "です, ます, ませんか, がっつり, 年収, 収入, OK, 手当, 祝金, 歓迎, 月収, 見舞金"
-    default_body_ng = "祝金, 見舞金, ボーナス"
+    default_title_ng = "です, ます, ませんか, がっつり, 年収, 収入, OK, 手当, 祝金, 歓迎, 月収, 見舞金,🔶"
+    default_body_ng = "祝金, 見舞金, ボーナス,🔶"
     
     st.markdown("##### 🚫 NGワード設定")
     col_ng1, col_ng2 = st.columns(2)
@@ -352,6 +352,7 @@ if st.session_state.pending_regs:
                         st.rerun()
                     except Exception as e:
                         st.error(f"登録エラー: {e}")
+
 
 
 
