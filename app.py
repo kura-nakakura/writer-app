@@ -5,21 +5,17 @@ import pandas as pd
 import google.generativeai as genai
 import json
 import re
-import contextlib # ★新機能：カスタムローディング用
+import contextlib 
 
 # --- ページ設定 ---
 st.set_page_config(page_title="求人原稿 自動審査ツール", page_icon="☁️", layout="wide")
 
-# --- 🤍 カスタムCSS（韓国風ミニマルデザインの魔法） ---
+# --- 🤍 カスタムCSS ---
 st.markdown("""
 <style>
-    /* 全体の背景 */
     .stApp { background-color: #F5F7FA !important; }
-    /* 文字色 */
     h1, h2, h3, h4, h5, h6, p, span, label, div { color: #4A4A4A !important; }
-    /* 区切り線 */
     hr { border-bottom: 2px solid #E2E8F0 !important; border-top: none !important; margin: 20px 0; }
-    /* 入力欄 */
     .stTextInput input, .stTextArea textarea {
         background-color: #FFFFFF !important; color: #4A4A4A !important;
         border: 1px solid #D0D7E1 !important; border-radius: 12px !important;
@@ -28,7 +24,6 @@ st.markdown("""
     .stSelectbox div[data-baseweb="select"] > div {
         background-color: #FFFFFF !important; border: 1px solid #D0D7E1 !important; border-radius: 12px !important;
     }
-    /* ボタン */
     .stButton > button {
         background-color: #7A9EBA !important; color: #FFFFFF !important;
         border: none !important; border-radius: 12px !important; font-weight: bold !important;
@@ -37,18 +32,12 @@ st.markdown("""
     .stButton > button:hover {
         background-color: #6385A1 !important; transform: translateY(-2px) !important;
     }
-    /* ★修正：タブの赤い下線をくすみブルーに強制上書き！ */
-    div[data-baseweb="tab-highlight"] {
-        background-color: #7A9EBA !important;
-    }
-    .stTabs [data-baseweb="tab-list"] {
-        border-bottom: 2px solid #E2E8F0 !important; background-color: transparent !important;
-    }
+    div[data-baseweb="tab-highlight"] { background-color: #7A9EBA !important; }
+    .stTabs [data-baseweb="tab-list"] { border-bottom: 2px solid #E2E8F0 !important; background-color: transparent !important; }
     .stTabs [data-baseweb="tab"] { background-color: transparent !important; }
     .stTabs [data-baseweb="tab-list"] button [data-testid="stMarkdownContainer"] p {
         font-size: 18px !important; font-weight: bold !important; color: #7A9EBA !important;
     }
-    /* パネル */
     [data-testid="stMetric"], [data-testid="stAlert"] {
         background-color: #FFFFFF !important; border: 1px solid #E2E8F0 !important;
         padding: 15px !important; border-radius: 12px !important; box-shadow: 0 4px 12px rgba(0,0,0,0.03) !important;
@@ -57,24 +46,17 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- ★新機能：動画が流れるカスタムローディング画面 ---
+# --- ★カスタムローディング画面 ---
 @contextlib.contextmanager
 def custom_spinner(text="処理中..."):
-    # ローディング中だけ表示される特別な「箱（プレースホルダー）」を作る
     placeholder = st.empty()
     with placeholder.container():
         st.markdown(f"<h4 style='text-align: center; color: #7A9EBA; margin-top: 20px;'>{text}</h4>", unsafe_allow_html=True)
-        
-        # 🎬 動画を流す場合は、以下の「#」を消して、ファイル名を自分の動画に合わせてください！
-        # st.video("loading.mp4", autoplay=True, loop=True, muted=True)
-        
-        # （参考）もし動画ではなくGIF画像（loading.gif）を使いたい場合はこちら↓
         st.image("6FCDDAA6-C15B-45A9-89D6-B6B27AE3E5BC.gif", use_container_width=True)
-        
     try:
-        yield # ここで裏側の重い処理（AI審査など）が走ります
+        yield 
     finally:
-        placeholder.empty() # 処理が終わったら動画の箱ごと綺麗に消し去る！
+        placeholder.empty() 
 
 # --- 状態管理 ---
 if "pending_regs" not in st.session_state:
@@ -109,19 +91,36 @@ def load_realtime_dataframe(sheet_id, sheet_name=None):
     df = df.loc[:, ~df.columns.duplicated()]
     return df.loc[:, df.columns != '']
 
-# --- 🤖 AI審査関数 ---
-def evaluate_job_with_ai(job_data_dict):
+# ★新機能：スプシから「最低賃金データ」を読み込む関数
+@st.cache_data(ttl=3600)
+def get_min_wage(sheet_id):
+    try:
+        ws = get_worksheet(sheet_id, "最低賃金")
+        return ws.acell('A1').value
+    except Exception:
+        return "（最低賃金データが取得できませんでした）"
+
+# --- 🤖 AI審査関数（★最低賃金データを引数として受け取るように改修） ---
+def evaluate_job_with_ai(job_data_dict, min_wage_text):
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
     model = genai.GenerativeModel('gemini-2.5-flash')
+    
     prompt = f"""
     あなたは厳格な求人原稿の審査プロフェッショナルです。
     以下の【求人データ】が、【インディード判定事項まとめ】を満たしているかチェックしてください。
 
     【求人データ】\n{json.dumps(job_data_dict, ensure_ascii=False, indent=2)}\n
     
+    【各都道府県の最新・最低賃金データ】\n{min_wage_text}\n
+    
     【インディード判定事項まとめ（審査基準）】
-    1. 基本給・月給: 最低賃金割れの懸念がないか。月給および基本給の詳細な金額や、固定手当との内訳が不明瞭でないか。
-    2. 固定残業代: 「金額」と「時間」の両方が明記されているか。原則45時間を超える記載（36協定違反の懸念）がないか。適正な割増賃金計算を下回っていないか。
+    ⚠️超重要：AIの独自の仮定や、複雑な割増賃金の独自計算による「推測のNG（〜の可能性がある等）」は絶対に出さないでください。テキストに明記されている事実のみで判断してください。
+
+    1. 基本給・月給: 最低賃金割れがないか。
+       ※必ず【求人データ】の「勤務地」と、上記の【最新・最低賃金データ】を照らし合わせ、基本給（または時給）が最低賃金を下回っていないか厳格に確認してください。
+       ※「月給〇〇円（固定残業代〇〇円含む）」のように、総額と固定残業代（または手当）の金額が記載されていれば、引き算で基本給が分かるため「内訳は明確である」としてクリアとしてください。「基本給」という単語がないからといってNGにしないでください。
+    2. 固定残業代: 「金額」と「時間」の両方が明記されているか。原則45時間を超える記載（36協定違反）がないか。
+       ※高度な割増賃金計算を自ら行い、わずかな誤差で「適正な割増賃金を下回る懸念がある」と過剰にNGを出さないでください。金額と時間がセットで明記されていれば基本はクリアとします。
     3. 各種手当: 手当の「名称」と「詳細」が不明なまま、金額だけ記載されていないか。
     4. 労働時間・休日: 「年間休日日数」の記載が抜けていないか（必須）。1日の労働時間が法定（8時間）を超えていないか。
     5. その他: 勤務地やタイトルなどに矛盾がないか。
@@ -175,7 +174,9 @@ with tab1:
                     st.success(f"✅ スプシ判定クリア！続けてAI審査を行います...（企業名: {res1.iloc[0]['企業名']}）")
                     
                     with custom_spinner('🪄 AIが規定をチェックしています...'):
-                        ai_result = evaluate_job_with_ai(res1.iloc[0].to_dict())
+                        # ★スプシから読み込んだ最低賃金データをAIに渡す！
+                        min_wage_data = get_min_wage(LIST_POSSIBLE_ID)
+                        ai_result = evaluate_job_with_ai(res1.iloc[0].to_dict(), min_wage_data)
                         
                         st.markdown("#### 🤖 AI審査レポート")
                         if "❌" in ai_result:
@@ -224,7 +225,9 @@ with tab2:
                             st.error("❌ 過去掲載リストと重複しています")
                         else:
                             with custom_spinner(f'🪄 ID:{sid} をAIチェック中...'):
-                                ai_result = evaluate_job_with_ai(res1.iloc[0].to_dict())
+                                # ★一括モードでも最低賃金データを渡す！
+                                min_wage_data = get_min_wage(LIST_POSSIBLE_ID)
+                                ai_result = evaluate_job_with_ai(res1.iloc[0].to_dict(), min_wage_data)
                                 if "❌" in ai_result:
                                     st.error(ai_result)
                                 else:
@@ -306,8 +309,6 @@ with tab3:
             with custom_spinner('🪄 AIがくまなく探しています...'):
                 genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
                 model = genai.GenerativeModel('gemini-2.5-flash')
-                
-                # ★修正箇所：AIへのプロンプトで「完全一致のみ」を強烈に指示しました！
                 prompt = f"""
                 あなたはプロの校正者です。
                 以下の「circus掲載内容（元データ）」と「Qmate掲載内容（作成原稿）」を比較し、厳格にチェックを行ってください。
