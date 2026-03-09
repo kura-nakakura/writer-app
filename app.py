@@ -109,20 +109,21 @@ def load_realtime_dataframe(sheet_id, sheet_name=None):
     df = df.loc[:, ~df.columns.duplicated()]
     return df.loc[:, df.columns != '']
 
-# --- 🤖 AI審査関数 ---
+# --- 🤖 AI審査関数（★機能アップデート：PDFの内容に準拠） ---
 def evaluate_job_with_ai(job_data_dict):
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
     model = genai.GenerativeModel('gemini-2.5-flash')
     prompt = f"""
     あなたは厳格な求人原稿の審査プロフェッショナルです。
-    以下の【求人データ】が、【審査規定】を満たしているかチェックしてください。
+    以下の【求人データ】が、【インディード判定事項まとめ】を満たしているかチェックしてください。
 
     【求人データ】\n{json.dumps(job_data_dict, ensure_ascii=False, indent=2)}\n
-    【審査規定】
-    1. 基本給・月給: 最低賃金割れの懸念がないか。金額や内訳が不明瞭でないか。
-    2. 固定残業代: 「金額」と「時間」の両方が明記されているか。原則45時間を超える記載や範囲が不明確な記載がないか。
-    3. 各種手当: 手当の名称や詳細が不明なまま金額だけ記載されていないか。
-    4. 労働時間・休日: 年間休日日数の記載が抜けていないか(必須)。1日の労働時間が法定(8時間)を超えていないか。
+    
+    【インディード判定事項まとめ（審査基準）】
+    1. 基本給・月給: 最低賃金割れの懸念がないか。月給および基本給の詳細な金額や、固定手当との内訳が不明瞭でないか。
+    2. 固定残業代: 「金額」と「時間」の両方が明記されているか。原則45時間を超える記載（36協定違反の懸念）がないか。適正な割増賃金計算を下回っていないか。
+    3. 各種手当: 手当の「名称」と「詳細」が不明なまま、金額だけ記載されていないか。
+    4. 労働時間・休日: 「年間休日日数」の記載が抜けていないか（必須）。1日の労働時間が法定（8時間）を超えていないか。
     5. その他: 勤務地やタイトルなどに矛盾がないか。
 
     【出力形式】
@@ -237,7 +238,7 @@ with tab2:
                 st.error(f"エラーが発生しました: {e}")
 
 # ==========================================
-# タブ3：文章比較FBモード
+# タブ3：文章比較FBモード（★機能アップデート）
 # ==========================================
 with tab3:
     st.markdown("### 🫧 文章比較 ＆ 文字数・NGワードチェック")
@@ -248,53 +249,80 @@ with tab3:
     with col_b:
         text_b = st.text_area("✍️ 【B】Qmate掲載内容 (チェック対象)", height=250)
 
-    try:
-        ws_ng = get_worksheet(LIST_PAST_ID, "転載情報")
-        ng_raw = ws_ng.acell('B2').value
-        # ★小ワザ：スプシ内で改行されていても綺麗に読み込めるように処理を追加しました
-        default_ng = ng_raw.replace("\n", "").replace("NGワード：", "").replace("NGワード:", "").replace("・", ", ").strip() if ng_raw else ""
-    except:
-        default_ng = "絶対, 必ず, 日本一, 最高"
-        
-    ng_words_input = st.text_input("🚫 今日のNGワード", value=default_ng)
+    # ★機能アップデート：PDFの内容に合わせてNGワードを「タイトル」と「全体」に分割！
+    default_title_ng = "です, ます, ませんか, がっつり, 年収, 収入, OK, 手当, 祝金, 歓迎, 月収, 見舞金"
+    default_body_ng = "祝金, 見舞金, ボーナス"
+    
+    st.markdown("##### 🚫 NGワード設定")
+    col_ng1, col_ng2 = st.columns(2)
+    with col_ng1:
+        ng_title_input = st.text_input("タイトル用 NGワード（タイトルのみ判定）", value=default_title_ng)
+    with col_ng2:
+        ng_body_input = st.text_input("求人全体用 NGワード（全体を判定）", value=default_body_ng)
 
     if st.button("✨ ミスチェック実行", type="primary"):
         if not text_a or not text_b:
             st.warning("AとBの両方に文章を入力してください！")
         else:
+            # ★機能アップデート：文字数オーバー時の「前後の文脈」を抽出する機能
             st.markdown("#### 📊 文字数・表記チェック結果")
-            matches = list(re.finditer(r'(\d+)\s*/\s*(\d+)', text_b))
+            
+            lines = text_b.split('\n')
+            matches_total = len(list(re.finditer(r'(\d+)\s*/\s*(\d+)', text_b)))
             
             col_m1, col_m2, col_m3 = st.columns(3)
             col_m1.metric("全体文字数 (A)", f"{len(text_a)} 文字")
             col_m2.metric("全体文字数 (B)", f"{len(text_b)} 文字")
-            col_m3.metric("文字数制限のチェック数", f"{len(matches)} 箇所")
+            col_m3.metric("文字数制限のチェック数", f"{matches_total} 箇所")
             
-            if matches:
-                over_list = []
+            over_list = []
+            clear_count = 0
+            
+            for i, line in enumerate(lines):
+                matches = list(re.finditer(r'(\d+)\s*/\s*(\d+)', line))
                 for match in matches:
                     curr, m_max = int(match.group(1)), int(match.group(2))
-                    if curr > m_max: over_list.append((curr, m_max))
-                
+                    if curr > m_max:
+                        # 前後の行を取得して表示文を作る
+                        prev_line = lines[i-1] if i > 0 else ""
+                        next_line = lines[i+1] if i < len(lines)-1 else ""
+                        context = f"{prev_line}\n**{line}**\n{next_line}".strip()
+                        over_list.append((curr, m_max, context))
+                    else:
+                        clear_count += 1
+            
+            if matches_total > 0:
                 if not over_list:
-                    st.success(f"✨ すべての文字数制限（全{len(matches)}箇所）をクリアしています！")
+                    st.success(f"✨ すべての文字数制限（全{clear_count}箇所）をクリアしています！")
                 else:
                     st.error(f"❌ {len(over_list)}箇所の文字数オーバーが見つかりました！")
-                    for curr, m_max in over_list:
-                        st.write(f"・ ⚠️ **{curr} / {m_max}文字** （{curr - m_max}文字オーバー）")
+                    for curr, m_max, context in over_list:
+                        with st.expander(f"⚠️ {curr} / {m_max}文字 （{curr - m_max}文字オーバー） - 前後の文章を見る", expanded=True):
+                            st.markdown(context)
             
+            # ★機能アップデート：AI指示書に「意味重視の比較」と「分割NGワード判定」を追加！
             st.markdown("#### 🤖 AI 転記ミス・NGワードレポート")
             with custom_spinner('🪄 AIがくまなく探しています...'):
                 genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
                 model = genai.GenerativeModel('gemini-2.5-flash')
                 prompt = f"""
                 あなたはプロの校正者です。
-                以下の「circus掲載内容」と「Qmate掲載内容」を比較し、厳格にチェックを行ってください。
+                以下の「circus掲載内容（元データ）」と「Qmate掲載内容（作成原稿）」を比較し、厳格にチェックを行ってください。
+
                 【circus掲載内容】\n{text_a}\n
                 【Qmate掲載内容】\n{text_b}\n
-                【NGワード】\n{ng_words_input}\n
-                1. 転記ミス・違いの指摘 (意味の変更、抜け漏れ、数字のズレ)
-                2. NGワードチェック
+
+                【チェック項目1：意味の比較・転記ミス】
+                - AとBで文章の流れや項目名が違っても、「給与35万〜」と「想定月収35万〜」のように、言っている意味（条件）が同じならOKとしてください。
+                - ただし、条件の数字の転記ミス、重要な条件の抜け漏れがあれば、「どこがどう間違っているか」を指摘してください。
+                - 特にミスがなければ「✅ 転記ミスや条件の抜け漏れはありません」と出力してください。
+
+                【チェック項目2：NGワード判定】
+                以下のルールに従い、Qmate掲載内容の中にNGワードがないかチェックしてください。
+                - タイトル判定用NGワード: {ng_title_input} （※Qmate掲載内容の中で「職種名」や「タイトル」と思われる部分のみをチェック）
+                - 求人全体判定用NGワード: {ng_body_input} （※Qmate掲載内容のすべての文章をチェック）
+                - 見つかった場合は「〇〇という言葉がNGワードに該当します。〇〇と言い換えてください」と具体的な修正案を提示してください。
+                - なければ「✅ NGワードは含まれていません」と出力してください。
                 """
                 response = model.generate_content(prompt, generation_config=genai.types.GenerationConfig(temperature=0.0))
                 st.write(response.text)
