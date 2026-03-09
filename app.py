@@ -91,7 +91,6 @@ def load_realtime_dataframe(sheet_id, sheet_name=None):
     df = df.loc[:, ~df.columns.duplicated()]
     return df.loc[:, df.columns != '']
 
-# ★新機能：スプシから「最低賃金データ」を読み込む関数
 @st.cache_data(ttl=3600)
 def get_min_wage(sheet_id):
     try:
@@ -100,7 +99,7 @@ def get_min_wage(sheet_id):
     except Exception:
         return "（最低賃金データが取得できませんでした）"
 
-# --- 🤖 AI審査関数（★最低賃金データを引数として受け取るように改修） ---
+# --- 🤖 AI審査関数 ---
 def evaluate_job_with_ai(job_data_dict, min_wage_text):
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
     model = genai.GenerativeModel('gemini-2.5-flash')
@@ -174,7 +173,6 @@ with tab1:
                     st.success(f"✅ スプシ判定クリア！続けてAI審査を行います...（企業名: {res1.iloc[0]['企業名']}）")
                     
                     with custom_spinner('🪄 AIが規定をチェックしています...'):
-                        # ★スプシから読み込んだ最低賃金データをAIに渡す！
                         min_wage_data = get_min_wage(LIST_POSSIBLE_ID)
                         ai_result = evaluate_job_with_ai(res1.iloc[0].to_dict(), min_wage_data)
                         
@@ -225,7 +223,6 @@ with tab2:
                             st.error("❌ 過去掲載リストと重複しています")
                         else:
                             with custom_spinner(f'🪄 ID:{sid} をAIチェック中...'):
-                                # ★一括モードでも最低賃金データを渡す！
                                 min_wage_data = get_min_wage(LIST_POSSIBLE_ID)
                                 ai_result = evaluate_job_with_ai(res1.iloc[0].to_dict(), min_wage_data)
                                 if "❌" in ai_result:
@@ -309,6 +306,8 @@ with tab3:
             with custom_spinner('🪄 AIがくまなく探しています...'):
                 genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
                 model = genai.GenerativeModel('gemini-2.5-flash')
+                
+                # ★修正ポイント：AIが「株式会社ライフアップ」を自社名だと理解し、本当の企業名を探すように指示！
                 prompt = f"""
                 あなたはプロの校正者です。
                 以下の「circus掲載内容（元データ）」と「Qmate掲載内容（作成原稿）」を比較し、厳格にチェックを行ってください。
@@ -317,6 +316,7 @@ with tab3:
                 【Qmate掲載内容】\n{text_b}\n
 
                 【チェック項目1：意味の比較・転記ミス】
+                ⚠️重要：「株式会社ライフアップ」は我々の自社名（求人作成代理店名）です。Qmate掲載内容の中に「株式会社ライフアップ」という記載があっても、「AとBで企業名が違う」というエラーには絶対にしないでください。Qmate側の本当の企業名は「掲載企業名」などの項目に記載されているので、そこを見てcircus側の企業名と一致しているか確認してください。
                 - AとBで文章の流れや項目名が違っても、「給与35万〜」と「想定月収35万〜」のように、言っている意味（条件）が同じならOKとしてください。
                 - ただし、条件の数字の転記ミス、重要な条件の抜け漏れがあれば、「どこがどう間違っているか」を指摘してください。
                 - 特にミスがなければ「✅ 転記ミスや条件の抜け漏れはありません」と出力してください。
