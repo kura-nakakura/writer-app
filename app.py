@@ -177,6 +177,7 @@ def evaluate_job_with_ai(job_data_dict, min_wage_text):
     （※問題がない場合は「✅ 規定違反や確認が必要な項目はありません」と出力）
     - **[⚠️ 要確認 または ❌ 掲載不可] 該当項目名**
       具体的な理由とボーダーライン（例：年間休日日数が不明です。現在の月給20万円・1日8時間労働の場合、年間休日が【112日未満】だと愛知県の最低賃金を下回るためアウトになります。【112日以上】であればクリアです。日数を追記してください。）
+    #####【審査に使用した抽出情報】
     """
     response = model.generate_content(prompt, generation_config=genai.types.GenerationConfig(temperature=0.0))
     return response.text
@@ -432,6 +433,7 @@ if st.session_state.pending_regs:
                         st.rerun()
                     except Exception as e:
                         st.error(f"登録エラー: {e}")
+
 
 
 
