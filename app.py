@@ -63,7 +63,7 @@ def custom_spinner(text="処理中..."):
     placeholder = st.empty()
     with placeholder.container():
         st.markdown(f"<h4 style='text-align: center; color: #7A9EBA; margin-top: 20px;'>{text}</h4>", unsafe_allow_html=True)
-        st.image("6FCDDAA6-C15B-45A9-89D6-B6B27AE3E5BC.gif", use_container_width=True)
+        st.image("D5E80210-94A2-4161-9741-AEF73B4129DA.gif", use_container_width=True)
     try:
         yield 
     finally:
@@ -406,7 +406,7 @@ with tab3:
                 ⚠️超重要：AIの独自の判断で「意味が似ている言葉（類語）」や「代替表現（例：手当→あり等）」をNGワードとして拡大解釈・誤検知することは絶対にやめてください。リストにある文字列と一言一句同じ場合のみ指摘してください。
 
                 - タイトル判定用NGワード: {ng_title_input} （※Qmate掲載内容の中で「職種名」や「タイトル」と思われる部分のみをチェック）
-                - 求人全体判定用NGワード: {ng_body_input} （※Qmate掲載内容のすべての文章をチェック）
+                - 求人全体判定用NGワード: {ng_body_input} （※Qmate掲載内容のすべての文章をチェック※NGワードの「面接」に関しては「選考フロー：【選考の流れ】応募⇒初回面談⇒面接（1～2回程度）⇒入社」を除きすべての文章をチェック）
                 - 【完全一致】で見つかった場合は「〇〇という言葉がNGワードに該当します。〇〇と言い換えてください」と具体的な修正案を提示してください。
                 - 見つからない場合は「✅ NGワードは含まれていません」と出力してください。
                 """
@@ -438,6 +438,7 @@ if st.session_state.pending_regs:
                         st.rerun()
                     except Exception as e:
                         st.error(f"登録エラー: {e}")
+
 
 
 
