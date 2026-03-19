@@ -120,7 +120,7 @@ def get_min_wage(sheet_id):
     except Exception:
         return "（最低賃金データが取得できませんでした）"
 
-# --- 🤖 AI審査関数 ---
+# --- 🤖 AI審査関数（タブ1・タブ2用） ---
 def evaluate_job_with_ai(job_data_dict, min_wage_text):
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
     model = genai.GenerativeModel('gemini-2.5-flash')
@@ -226,7 +226,6 @@ with tab1:
                         
                         st.markdown("#### 🤖 AI審査レポート")
                         
-                        # ★アップデート：「⚠️ 要確認」の場合でもカートにストックするように修正！
                         if "❌" in ai_result:
                             st.error(ai_result)
                         else:
@@ -283,10 +282,13 @@ with tab2:
                             st.error("❌ 過去掲載リストと重複しています")
                         else:
                             with custom_spinner(f'🪄 ID:{sid} をAIチェック中...'):
+                                import time
+                                if i > 0:
+                                    time.sleep(4) 
+                                    
                                 min_wage_data = get_min_wage(LIST_POSSIBLE_ID)
                                 ai_result = evaluate_job_with_ai(res1.iloc[0].to_dict(), min_wage_data)
                                 
-                                # ★一括モードでも「⚠️ 要確認」をカートにストックするように修正！
                                 if "❌" in ai_result:
                                     st.error(ai_result)
                                 else:
@@ -342,7 +344,10 @@ with tab3:
         if not text_a or not text_b:
             st.warning("AとBの両方に文章を入力してください！")
         else:
-            st.markdown("#### 📊 文字数・表記チェック結果")
+            # ---------------------------------------------
+            # ① 文字数チェック（Pythonコード）
+            # ---------------------------------------------
+            st.markdown("#### 📊 文字数制限チェック (システム自動判定)")
             
             lines = text_b.split('\n')
             matches_total = len(list(re.finditer(r'(\d+)\s*/\s*(\d+)', text_b)))
@@ -375,11 +380,49 @@ with tab3:
                     for curr, m_max, context in over_list:
                         with st.expander(f"⚠️ {curr} / {m_max}文字 （{curr - m_max}文字オーバー） - 前後の文章を見る", expanded=True):
                             st.markdown(context)
+
+            # ---------------------------------------------
+            # ② NGワード・チェック結果 (Pythonコードによる完全一致判定)
+            # ---------------------------------------------
+            st.markdown("#### 🚫 NGワード・チェック結果 (システム自動判定)")
             
-            st.markdown("#### 🤖 AI 転記ミス・NGワードレポート")
-            with custom_spinner('🪄 AIがくまなく探しています...'):
+            ng_title_list = [w.strip() for w in ng_title_input.split(',') if w.strip()]
+            ng_body_list = [w.strip() for w in ng_body_input.split(',') if w.strip()]
+
+            # ユーザー指定の法則で「タイトル部分」を抽出（保険として最初の10行も）
+            title_match = re.search(r'職種名必須\s*\n(.*?)\n\d+/\d+文字', text_b)
+            title_text = title_match.group(1) if title_match else "\n".join(text_b.split('\n')[:10])
+
+            ng_errors = []
+            
+            # タイトルのNGワード判定
+            for w in ng_title_list:
+                if w in title_text:
+                    ng_errors.append(f"【タイトル】「**{w}**」が含まれています。削除または変更してください。")
+            
+            # 本文のNGワード判定
+            for w in ng_body_list:
+                if w in text_b:
+                    if w in ["祝金", "見舞金", "お見舞金"]:
+                        ng_errors.append(f"【全体】「**{w}**」が含まれています。「手当」に記載を変更してください。")
+                    else:
+                        ng_errors.append(f"【全体】「**{w}**」が含まれています。削除または言い換えてください。")
+
+            if not ng_errors:
+                st.success("✨ タイトル・本文ともにNGワードは一切含まれていません！")
+            else:
+                for err in ng_errors:
+                    st.error(f"❌ {err}")
+
+            # ---------------------------------------------
+            # ③ 転記ミス・内容比較レポート（AI判定）
+            # ---------------------------------------------
+            st.markdown("#### 🤖 AI 転記ミス・内容比較レポート")
+            with custom_spinner('🪄 AIが条件の転記ミスをくまなく探しています...'):
                 genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
                 model = genai.GenerativeModel('gemini-2.5-flash')
+                
+                # ★ステップ①：AIには「転記ミスのチェック」だけに集中させます（NGワード判定の指示は削除）
                 prompt = f"""
                 あなたはプロの校正者です。
                 以下の「circus掲載内容（元データ）」と「Qmate掲載内容（作成原稿）」を比較し、厳格にチェックを行ってください。
@@ -387,33 +430,24 @@ with tab3:
                 【circus掲載内容】\n{text_a}\n
                 【Qmate掲載内容】\n{text_b}\n
 
-                【チェック項目1：意味の比較・転記ミス】
-                ⚠️重要：「株式会社ライフアップ」は我々の自社名（求人作成代理店名）です。Qmate掲載内容の中に「株式会社ライフアップ」という記載があっても、「AとBで企業名が違う」というエラーには絶対にしないでください。Qmate側の本当の企業名は「掲載企業名」などの項目に記載されているので、そこを見てcircus側の企業名と一致しているか確認してください。
+                【チェック項目：意味の比較・転記ミス】
                 - AとBで文章の流れや項目名が違っても、「給与35万〜」と「想定月収35万〜」のように、言っている意味（条件）が同じならOKとしてください。
                 - 【追加ルール①：勤務地】Qmate掲載内容は1求人につき1勤務地しか掲載できません。そのため、circus掲載内容に複数の勤務地が記載されている場合、Qmate掲載内容の勤務地がその中のどれか1つでも当てはまっていれば「OK（転記ミスなし）」としてください。
                 - 【追加ルール②：金額の表記】circus掲載内容の月給表記はシステム上「千円の位（例：33.3万円）」までしか反映されないことがあります。Qmate掲載内容に細かい金額（例：333,333円）が記載されている場合、必ずcircus掲載内容のどこか（補足欄など）にその細かい金額が記載されていないか探し、記載が存在して合致していれば「OK」としてください。
-                - 【追加ルール③：固定残業代の専用欄チェック（重要）】circus掲載内容に固定残業代の記載がある場合、Qmate掲載内容の『固定残業代必須』や『固定残業時間必須』という専用入力欄に金額と時間が正しく転記されているか確認してください。別の欄（勤務時間詳細など）に記載されていても、専用入力欄が空欄になっている場合はミスとして指摘してください。
-                - ただし、条件の数字の転記ミス、重要な条件の抜け漏れ、明らかな誤字脱字があれば、「どこがどう間違っているか」を指摘してください。
+                - 【追加ルール③：固定残業代の専用欄チェック】circus掲載内容に固定残業代の記載がある場合、Qmate掲載内容の『固定残業代必須』や『固定残業時間必須』という専用入力欄に金額と時間が正しく転記されているか確認してください。別の欄に記載されていても、専用入力欄が空欄になっている場合はミスとして指摘してください。
+                - 【追加ルール④：NGワードの意図的な変更・削除】circus掲載内容に「祝金」「見舞金」「面接」などのQmateで禁止されているNGワードが含まれており、Qmate側でそれらが「手当」「選考」と言い換えられていたり、削除されている場合は、作成者の正しい判断です。「情報の抜け漏れ」や「転記ミス」として絶対に指摘しないでください。
+                
+                - ただし、条件の数字の転記ミス、重要な条件の抜け漏れがあれば、「どこがどう間違っているか」を指摘してください。
                 
                 🛑【超重要：以下の項目は「絶対に」指摘・エラー検知しないでください】🛑
-                - 選考フローに関する違いや抜け漏れ（企業ごとに異なるためチェック不要です）
-                - 応募資格・条件（学歴不問、未経験OKなど）の抜け漏れ（Qmate側ではタグとして処理するためテキストチェックは不要です）
+                - 選考フローに関する違いや抜け漏れ（企業ごとに異なるためチェック不要）
+                - 応募資格・条件（学歴不問、未経験OKなど）の抜け漏れ（Qmate側ではタグで処理するためテキストチェック不要）
                 - Qmateの入力ルール違反（職種名の修飾語の有無など）
                 - 年齢制限などの論理的矛盾
                 - 「事業内容」「募集背景」「募集期間」「組織構成」の4項目の抜け漏れ
                 これらの違いを見つけても完全に無視してください。勝手な粗探しは不要です。
 
-                【チェック項目2：NGワード判定（※完全一致のみ！）】
-                以下のルールに従い、Qmate掲載内容の中に「指定されたNGワードそのもの（完全一致）」が含まれていないかチェックしてください。
-                ⚠️超重要：AIの独自の判断で「意味が似ている言葉（類語）」や「代替表現」をNGワードとして拡大解釈・誤検知することは絶対にやめてください。リストにある文字列と一言一句同じ場合のみ指摘してください。
-
-                - タイトル判定用NGワード: {ng_title_input} （※Qmate掲載内容の中で「職種名」や「タイトル」と思われる部分のみをチェック）
-                - 求人全体判定用NGワード: {ng_body_input} （※Qmate掲載内容のすべての文章をチェック）
-                
-                - 【完全一致】で見つかった場合は、以下のルールで修正案を提示してください。
-                  ・基本ルール：「〇〇という言葉がNGワードに該当します。削除してください。」と出力する。
-                  ・特別ルール：「見舞金」「お見舞金」「祝金」が見つかった場合のみ、「【手当】に記載を変更してください。」と出力する。
-                - 見つからない場合は「✅ NGワードは含まれていません」と出力してください。
+                特にミスがなければ「✅ 転記ミスや条件の抜け漏れはありません」と出力してください。
                 """
                 response = model.generate_content(prompt, generation_config=genai.types.GenerationConfig(temperature=0.0))
                 st.write(response.text)
@@ -443,7 +477,6 @@ if st.session_state.pending_regs:
                         st.rerun()
                     except Exception as e:
                         st.error(f"登録エラー: {e}")
-
 
 
 
