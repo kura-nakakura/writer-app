@@ -324,14 +324,19 @@ with tab3:
     with col_b:
         text_b = st.text_area("✍️ 【B】Qmate掲載内容 (チェック対象)", height=250, key="text_b_input")
 
+    # ★アップデート：NGワードをスプシからのみ読み込む（コード内ハードコーディング廃止）
     try:
         ws_ng = get_worksheet(LIST_PAST_ID, "転載情報")
-        ng_raw = ws_ng.acell('B2').value
-        default_title_ng = ng_raw.replace("\n", "").replace("NGワード：", "").replace("NGワード:", "").replace("・", ", ").strip() if ng_raw else ""
-    except:
-        default_title_ng = "です, ます, ませんか, がっつり, 年収, 収入, OK, 手当, 祝金, 歓迎, 月収, 月給, 面接, 見舞金, 🔶"
+        # B2: タイトル用
+        ng_raw_title = ws_ng.acell('B2').value
+        default_title_ng = ng_raw_title.replace("\n", "").replace("NGワード：", "").replace("NGワード:", "").replace("・", ", ").strip() if ng_raw_title else ""
         
-    default_body_ng = "祝金, 見舞金, ボーナス, 面接, 🔶"
+        # B3: 本文用
+        ng_raw_body = ws_ng.acell('B3').value
+        default_body_ng = ng_raw_body.replace("\n", "").replace("NGワード：", "").replace("NGワード:", "").replace("・", ", ").strip() if ng_raw_body else ""
+    except:
+        default_title_ng = ""
+        default_body_ng = ""
     
     st.markdown("##### 🚫 NGワード設定")
     col_ng1, col_ng2 = st.columns(2)
@@ -393,20 +398,26 @@ with tab3:
             title_match = re.search(r'職種名必須\s*\n(.*?)\n\d+/\d+文字', text_b)
             title_text = title_match.group(1) if title_match else "\n".join(text_b.split('\n')[:10])
 
+            # ★アップデート：全角・半角スペースを裏側で除去した「判定用テキスト」を作成
+            title_text_clean = title_text.replace(" ", "").replace("　", "")
+            text_b_clean = text_b.replace(" ", "").replace("　", "")
+
             ng_errors = []
             
             # タイトルのNGワード判定
             for w in ng_title_list:
-                if w in title_text:
-                    ng_errors.append(f"【タイトル】「**{w}**」が含まれています。削除または変更してください。")
+                w_clean = w.replace(" ", "").replace("　", "")
+                if w_clean and w_clean in title_text_clean:
+                    ng_errors.append(f"【タイトル】「**{w}**」が含まれています。削除してください。")
             
             # 本文のNGワード判定
             for w in ng_body_list:
-                if w in text_b:
-                    if w in ["祝金", "見舞金", "お見舞金"]:
+                w_clean = w.replace(" ", "").replace("　", "")
+                if w_clean and w_clean in text_b_clean:
+                    if w_clean in ["祝金", "見舞金", "お見舞金"]:
                         ng_errors.append(f"【全体】「**{w}**」が含まれています。「手当」に記載を変更してください。")
                     else:
-                        ng_errors.append(f"【全体】「**{w}**」が含まれています。削除または言い換えてください。")
+                        ng_errors.append(f"【全体】「**{w}**」が含まれています。削除してください。")
 
             if not ng_errors:
                 st.success("✨ タイトル・本文ともにNGワードは一切含まれていません！")
@@ -422,7 +433,6 @@ with tab3:
                 genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
                 model = genai.GenerativeModel('gemini-2.5-flash')
                 
-                # ★ステップ①：AIには「転記ミスのチェック」だけに集中させます（NGワード判定の指示は削除）
                 prompt = f"""
                 あなたはプロの校正者です。
                 以下の「circus掲載内容（元データ）」と「Qmate掲載内容（作成原稿）」を比較し、厳格にチェックを行ってください。
@@ -431,6 +441,7 @@ with tab3:
                 【Qmate掲載内容】\n{text_b}\n
 
                 【チェック項目：意味の比較・転記ミス】
+                ⚠️重要：「株式会社ライフアップ」は我々の自社名（求人作成代理店名）です。Qmate掲載内容の中に「株式会社ライフアップ」という記載があっても、「AとBで企業名が違う」というエラーには絶対にしないでください。Qmate側の本当の企業名は「掲載企業名」などの項目に記載されているので、そこを見てcircus側の企業名と一致しているか確認してください。
                 - AとBで文章の流れや項目名が違っても、「給与35万〜」と「想定月収35万〜」のように、言っている意味（条件）が同じならOKとしてください。
                 - 【追加ルール①：勤務地】Qmate掲載内容は1求人につき1勤務地しか掲載できません。そのため、circus掲載内容に複数の勤務地が記載されている場合、Qmate掲載内容の勤務地がその中のどれか1つでも当てはまっていれば「OK（転記ミスなし）」としてください。
                 - 【追加ルール②：金額の表記】circus掲載内容の月給表記はシステム上「千円の位（例：33.3万円）」までしか反映されないことがあります。Qmate掲載内容に細かい金額（例：333,333円）が記載されている場合、必ずcircus掲載内容のどこか（補足欄など）にその細かい金額が記載されていないか探し、記載が存在して合致していれば「OK」としてください。
@@ -477,16 +488,3 @@ if st.session_state.pending_regs:
                         st.rerun()
                     except Exception as e:
                         st.error(f"登録エラー: {e}")
-
-
-
-
-
-
-
-
-
-
-
-
-
